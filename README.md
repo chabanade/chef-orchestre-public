@@ -39,7 +39,8 @@ local. Deux raisons juridiques, verifiees sur sources primaires :
 
 | Fichier | Role |
 |---|---|
-| `config.yaml` | La table d'aiguillage LiteLLM : routes `local-sensible`, `cloud-lourd`, `chef-auto` |
+| `config.yaml` | La table d'aiguillage LiteLLM : routes `local-sensible`, `cloud-lourd`, `chef-auto`, `cloud-pseudo` |
+| `greffier.py` | La methode de l'armoire : pseudonymisation aller-retour, table jamais sortie |
 | `detection.py` | Le cerveau de la serrure : extraction du texte, sensibilite, complexite (Python pur, zero dependance) |
 | `detection_fine.py` | La loupe optionnelle : detection fine PII (GLiNER ou Presidio), fenetres glissantes |
 | `chef_orchestre_hook.py` | La plomberie LiteLLM : fail-closed, default-deny, journal |
@@ -120,6 +121,36 @@ NERmembert (MIT), eds-pseudo de l'AP-HP (BSD-3, clinique). Ecartes : Piiranha (l
 non commerciale, performances contestees par arXiv 2504.12308), eu-pii-safeguard
 (licence d'evaluation), detecteurs cloud (demander au cloud si une donnee peut sortir
 vers le cloud viole le secret par l'acte meme de verification).
+
+## La methode de l'armoire : route `cloud-pseudo` (pseudonymisation aller-retour)
+
+Inspiree d'une pratique hospitaliere reelle (les CECOS, pour le don de gametes) :
+le donneur recoit un numero, tout le monde travaille avec le numero et les donnees
+utiles (groupe sanguin, caracteristiques), et l'identite reste dans une armoire
+fermee, accessible a peu de personnes, sur demande motivee. C'est exactement la
+pseudonymisation au sens du RGPD (art. 4.5) : les informations de re-identification
+conservees SEPAREMENT, sous mesures techniques et organisationnelles.
+
+Transposition (route opt-in `cloud-pseudo`, voir `greffier.py`) :
+1. ALLER : les valeurs formatees (IBAN, NIR, email, telephone, SIRET, CB) sont
+   remplacees par des jetons `<IBAN_1>`, `<EMAIL_1>`... La table jeton -> valeur
+   (l'armoire) reste EN MEMOIRE LOCALE, jamais sur disque, jamais au journal.
+2. Le cloud travaille sur les numeros, comme le labo travaillait sur les donneurs.
+3. RETOUR : la reponse est re-personnalisee en local, puis l'armoire est brulee
+   (la table ne vit que le temps de l'aller-retour : mieux que l'armoire papier).
+
+Garde-fous fail-closed : apres pseudonymisation, le texte est RE-VERIFIE ; s'il
+reste un motif (mot-cle metier comme "patient", entite vue par la loupe, bloc non
+inspectable), la demande est REFUSEE : une pseudonymisation incomplete ne sort pas.
+Sans le hook, la route `cloud-pseudo` pointe le local (rien ne sort par accident).
+Streaming desactive sur cette route (la re-personnalisation exige la reponse complete).
+
+Limites juridiques assumees (verifiees sur sources primaires) : pour celui qui
+detient la table, la donnee pseudonymisee RESTE une donnee personnelle (CJUE,
+4 septembre 2025, C-413/23 P) ; et le contexte peut re-identifier sans identifiant
+direct (criteres G29 : individualisation, correlation, inference). Cette route
+REDUIT fortement le risque pour les taches mixtes ; elle ne remplace pas le local
+strict pour l'ultra-sensible, et la minimisation reste due.
 
 ## Durcissements issus de la revue adversariale (juin 2026)
 

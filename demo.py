@@ -40,6 +40,16 @@ ACTES = {
         "question": "Redige un rapport complet sur l'histoire de l'electrification rurale en France au 20e siecle, avec un plan detaille en cinq parties.",
         "attendu": "part vers le CLOUD (tache lourde, zero donnee sensible)",
     },
+    "5-armoire-pseudo": {
+        "model": "cloud-pseudo",
+        "question": "Analyse ce paiement recurrent vers FR76 3000 6000 0112 3456 7890 189 et propose une formulation de relance.",
+        "attendu": "IBAN remplace par <IBAN_1>, part au CLOUD pseudonymise, reponse re-personnalisee au retour (methode de l'armoire)",
+    },
+    "5bis-armoire-refus": {
+        "model": "cloud-pseudo",
+        "question": "Le patient Exemple est joignable au 06 12 34 56 78 pour son suivi.",
+        "attendu": "REFUS 403 : le mot 'patient' (contexte metier) n'est pas remplacable, pseudonymisation incomplete",
+    },
 }
 
 ACTE_FAIL_CLOSED = {

@@ -31,6 +31,15 @@ model_list:
       model: ollama_chat/qwen3:4b
       api_base: os.environ/OLLAMA_API_BASE
 
+  # Route virtuelle "methode de l'armoire" (opt-in) : le hook pseudonymise
+  # (IBAN, NIR, email... -> jetons) PUIS bascule vers le cloud ; la table de
+  # correspondance reste en memoire locale et la reponse est re-personnalisee
+  # au retour. Declaree vers le LOCAL par defaut : sans le hook, rien ne sort.
+  - model_name: cloud-pseudo
+    litellm_params:
+      model: ollama_chat/qwen3:4b
+      api_base: os.environ/OLLAMA_API_BASE
+
 litellm_settings:
   # La serrure : detection sensibilite + complexite + journal + fail-closed
   callbacks: chef_orchestre_hook.proxy_handler_instance

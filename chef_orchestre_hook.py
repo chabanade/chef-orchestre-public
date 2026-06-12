@@ -36,10 +36,18 @@ from detection import (
     extraire_texte,
     journaliser,
 )
+from greffier import Greffier
 
 ROUTE_LOCALE = os.environ.get("CHEF_ROUTE_LOCALE", "local-sensible")
 ROUTE_CLOUD = os.environ.get("CHEF_ROUTE_CLOUD", "cloud-lourd")
 ROUTE_AUTO = os.environ.get("CHEF_ROUTE_AUTO", "chef-auto")
+# Route "methode de l'armoire" (opt-in) : pseudonymiser puis cloud,
+# re-personnalisation au retour. Voir greffier.py.
+ROUTE_PSEUDO = os.environ.get("CHEF_ROUTE_PSEUDO", "cloud-pseudo")
+
+# L'armoire en transit : table de chaque demande pseudo en cours, par id
+# d'appel. En memoire seulement, purgee au retour. Jamais journalisee.
+_armoires_en_transit = {}
 # Routes considerees comme locales (default-deny : tout le reste = sortie).
 # ATTENTION : chaque nom liste ici doit pointer un backend local (ollama_*)
 # dans config.yaml. C'est un engagement de configuration, verifie a la main.
@@ -101,6 +109,39 @@ class ChefOrchestre(CustomLogger):
             texte = ""
             motifs_sensibles = ["detection-en-panne"]
 
+        # ---- Route PSEUDO (opt-in) : la methode de l'armoire ----
+        if modele_demande == ROUTE_PSEUDO:
+            if non_inspectable or "detection-en-panne" in motifs_sensibles:
+                journaliser("refus-pseudo-non-inspectable", modele_demande, None, motifs_sensibles, len(texte))
+                raise _refus(motifs_sensibles,
+                             "Route pseudo refusee : contenu non inspectable ou detection en panne, "
+                             "impossible de garantir une pseudonymisation complete.")
+            greffier = Greffier()
+            nb_jetons = greffier.pseudonymiser_demande(data)
+            # Contre-verification sur le texte PSEUDONYMISE : s'il reste un
+            # motif sensible (mot-cle metier, entite vue par la loupe), la
+            # pseudonymisation est incomplete -> refus. Fail-closed.
+            texte_pseudo, _ = extraire_texte(data)
+            motifs_restants = await boucle.run_in_executor(None, detecter_sensibilite_complete, texte_pseudo)
+            if motifs_restants:
+                greffier.detruire()
+                journaliser("refus-pseudo-incomplete", modele_demande, None, motifs_restants, len(texte))
+                raise _refus(motifs_restants,
+                             "Route pseudo refusee : il reste du sensible que le greffier ne sait pas "
+                             "remplacer (noms, contexte metier). Utiliser la route locale.")
+            identifiant = data.get("litellm_call_id") or id(data)
+            # Purge de securite : un appel qui a echoue en route ne doit pas
+            # laisser son armoire s'accumuler en memoire.
+            while len(_armoires_en_transit) > 100:
+                _, orphelin = _armoires_en_transit.popitem()
+                orphelin.detruire()
+            _armoires_en_transit[identifiant] = greffier
+            data["model"] = ROUTE_CLOUD
+            data["stream"] = False  # la re-personnalisation au retour exige une reponse complete
+            journaliser("pseudo-vers-cloud", modele_demande, ROUTE_CLOUD,
+                        ["jetons:" + str(nb_jetons)], len(texte))
+            return data
+
         # ---- Pilier 1 : SENSIBILITE (gagne toujours) ----
         if motifs_sensibles:
             if not cible_locale:
@@ -134,6 +175,25 @@ class ChefOrchestre(CustomLogger):
         # Route explicite sans donnee sensible : on respecte le choix de l'appelant.
         journaliser("route-explicite", modele_demande, modele_demande, [], len(texte))
         return data
+
+    async def async_post_call_success_hook(self, data, user_api_key_dict, response):
+        """RETOUR de la route pseudo : re-personnalise la reponse en local,
+        puis brule l'armoire. Si l'armoire est introuvable, la reponse part
+        telle quelle (pseudonymisee) : sur, jamais bloquant."""
+        identifiant = data.get("litellm_call_id") or id(data)
+        greffier = _armoires_en_transit.pop(identifiant, None)
+        if greffier is None:
+            return response
+        try:
+            for choix in getattr(response, "choices", []) or []:
+                message = getattr(choix, "message", None)
+                if message is not None and isinstance(getattr(message, "content", None), str):
+                    message.content = greffier.repersonnaliser(message.content)
+            journaliser("pseudo-retour-repersonnalise", None, None,
+                        ["jetons:" + str(len(greffier.table))], 0)
+        finally:
+            greffier.detruire()
+        return response
 
 
 proxy_handler_instance = ChefOrchestre()

@@ -220,6 +220,74 @@ class TestLoupe(unittest.TestCase):
         self.assertEqual(["abc"], detection_fine._fenetres("abc"))
 
 
+class TestGreffier(unittest.TestCase):
+    """La methode de l'armoire : pseudonymiser a l'aller, re-personnaliser au
+    retour, table jamais exposee. Toutes donnees FICTIVES."""
+
+    def test_aller_retour_complet(self):
+        from greffier import Greffier
+        g = Greffier()
+        original = "Reglement sur FR76 3000 6000 0112 3456 7890 189, contact jean@exemple.fr"
+        pseudo = g.pseudonymiser_texte(original)
+        self.assertNotIn("FR76", pseudo)
+        self.assertNotIn("jean@exemple.fr", pseudo)
+        self.assertIn("<IBAN_1>", pseudo)
+        self.assertIn("<EMAIL_1>", pseudo)
+        reponse_cloud = "Le virement vers <IBAN_1> est confirme, prevenez <EMAIL_1>."
+        finale = g.repersonnaliser(reponse_cloud)
+        self.assertIn("FR76 3000 6000 0112 3456 7890 189", finale)
+        self.assertIn("jean@exemple.fr", finale)
+
+    def test_meme_valeur_meme_jeton(self):
+        from greffier import Greffier
+        g = Greffier()
+        pseudo = g.pseudonymiser_texte("IBAN FR7630006000011234567890189 puis encore FR7630006000011234567890189")
+        self.assertEqual(1, len(g.table))  # une seule entree pour deux occurrences
+        self.assertEqual(2, pseudo.count("<IBAN_1>"))
+
+    def test_pseudonymise_la_demande_complete(self):
+        from greffier import Greffier
+        g = Greffier()
+        data = {"messages": [
+            {"role": "user", "content": "Appelle le 06 12 34 56 78"},
+            {"role": "user", "content": [{"type": "text", "text": "et ecris a paul@exemple.fr"}]},
+        ]}
+        nb = g.pseudonymiser_demande(data)
+        self.assertEqual(2, nb)
+        self.assertNotIn("06 12 34 56 78", data["messages"][0]["content"])
+        self.assertNotIn("paul@exemple.fr", data["messages"][1]["content"][0]["text"])
+
+    def test_texte_pseudonymise_ne_declenche_plus_les_regex(self):
+        # Le coeur de la contre-verification du hook : apres greffier, plus
+        # aucun motif regex ne doit rester.
+        from greffier import Greffier
+        g = Greffier()
+        pseudo = g.pseudonymiser_texte("NIR 1 80 02 75 123 456 78, tel 06 12 34 56 78, iban FR7630006000011234567890189")
+        codes_regex = [c for c in detecter_sensibilite(pseudo) if not c.startswith("mot-cle:")]
+        self.assertEqual([], codes_regex)
+
+    def test_mot_cle_contextuel_reste_apres_greffier(self):
+        # Un mot-cle metier ("patient") n'est PAS une valeur remplacable :
+        # il doit rester, et c'est lui qui fera refuser la route pseudo.
+        from greffier import Greffier
+        g = Greffier()
+        pseudo = g.pseudonymiser_texte("Le patient est joignable au 06 12 34 56 78")
+        self.assertIn("mot-cle:patient", detecter_sensibilite(pseudo))
+
+    def test_destruction_armoire(self):
+        from greffier import Greffier
+        g = Greffier()
+        g.pseudonymiser_texte("jean@exemple.fr")
+        self.assertEqual(1, len(g.table))
+        g.detruire()
+        self.assertEqual(0, len(g.table))
+
+    def test_jetons_restants_diagnostic(self):
+        from greffier import jetons_restants
+        self.assertEqual(["<IBAN_1>"], jetons_restants("Il reste <IBAN_1> ici"))
+        self.assertEqual([], jetons_restants("rien"))
+
+
 class TestRobustesse(unittest.TestCase):
     def test_seuil_env_malforme_ne_crashe_pas(self):
         import os
