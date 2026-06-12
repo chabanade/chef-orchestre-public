@@ -21,9 +21,15 @@ Write-Host "== 3/4 LiteLLM (le standardiste) =="
 python -m pip install --upgrade "litellm[proxy]"
 
 # Parametre -Fine : installe la loupe (detection fine PII, GLiNER ~1-2 Go au 1er lancement)
-if ($args -contains "-Fine") {
+# Parametre -FineDouble : GLiNER + Presidio + spaCy francais (double verification)
+if (($args -contains "-Fine") -or ($args -contains "-FineDouble")) {
     Write-Host "== 3bis/4 Detection fine (la loupe, GLiNER) =="
     python -m pip install -r "$Ici\requirements-fine.txt"
+}
+if ($args -contains "-FineDouble") {
+    Write-Host "== 3ter/4 Double verification (Presidio + spaCy francais) =="
+    python -m pip install presidio-analyzer spacy
+    python -m spacy download fr_core_news_md
 }
 
 Write-Host "== 4/4 Fichier .env =="

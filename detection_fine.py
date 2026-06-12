@@ -2,26 +2,36 @@
 """
 La loupe : detection fine des donnees personnelles (etape 2 de la serrure).
 
-Deux moteurs possibles, choisis par la variable CHEF_DETECTION_FINE :
-  - "gliner"   (defaut) : modele urchade/gliner_multi_pii-v1 (Apache 2.0),
-                optimise donnees personnelles, 6 langues dont le francais,
-                tourne sur CPU. Telechargement ~1-2 Go au premier lancement.
+MULTI-MOTEURS (defense en profondeur) : CHEF_DETECTION_FINE accepte une liste,
+par exemple "gliner" (defaut), "gliner,presidio" (double verification pour les
+donnees ultra-sensibles : sante, avocat), "presidio", ou "off".
+Chaque moteur liste analyse le texte, on fait l'UNION des trouvailles : il
+suffit qu'UN moteur voie une donnee pour qu'elle soit traitee comme sensible.
+
+Moteurs disponibles :
+  - "gliner"   : modele urchade/gliner_multi_pii-v1 (Apache 2.0), optimise
+                 donnees personnelles, 6 langues dont le francais, CPU.
+                 Telechargement ~1-2 Go au premier lancement.
   - "presidio" : Microsoft Presidio (MIT) + modele spaCy francais
-                (necessite : python -m spacy download fr_core_news_md ;
-                couverture francaise partielle, GLiNER reste conseille).
+                 (necessite : python -m spacy download fr_core_news_md ;
+                 couverture francaise partielle seul, utile en 2e couche).
   - "off"      : loupe desactivee, la serrure v1 (regles) travaille seule.
-  - toute autre valeur = faute de frappe -> traite comme "off" (et dit dans
-    statut()) plutot que de declencher un telechargement surprise de 2 Go.
+  - nom inconnu (faute de frappe) : ignore avec statut explicite, pas de
+    telechargement surprise.
+
+Mode strict (CHEF_LOUPE_STRICTE=1) : si UN des moteurs demandes n'a pas pu
+se charger, TOUTE demande est traitee avec prudence (reste en local) tant
+que la double verification promise n'est pas effective. A activer pour les
+configurations ultra-sensibles.
 
 Regles de securite (les memes que partout) :
-  - La loupe COMPLETE la serrure v1, elle ne la remplace jamais.
-  - Loupe absente -> regles seules (choix d'exploitation, journalise une fois).
-  - Loupe en panne -> code "loupe-en-panne" -> la demande reste en local.
-    Une panne degrade la puissance, jamais la confidentialite.
-  - GLiNER ne lit qu'une fenetre limitee (~384 jetons) : on DECOUPE donc le
-    texte en fenetres qui se chevauchent et on fait l'union des trouvailles,
-    sinon les donnees enfouies dans un long document seraient invisibles.
-  - Un seul appel d'inference a la fois (verrou) : les moteurs sous-jacents
+  - La loupe COMPLETE la serrure v1 (regex), elle ne la remplace jamais.
+  - Moteur en panne pendant une analyse -> code "loupe-en-panne" -> la
+    demande reste en local. Une panne degrade la puissance, jamais la
+    confidentialite.
+  - GLiNER ne lit qu'une fenetre limitee (~384 jetons) : on DECOUPE le texte
+    en fenetres qui se chevauchent et on fait l'union des trouvailles.
+  - Un seul calcul d'inference a la fois (verrou) : les moteurs sous-jacents
     ne sont pas garantis surs en multi-thread.
   - On ne journalise que des CODES ("pii:person"), jamais les valeurs.
 """
@@ -37,8 +47,13 @@ def _env_float(nom, defaut):
         return defaut
 
 
-MOTEURS_CONNUS = ("gliner", "presidio", "off")
-MOTEUR = os.environ.get("CHEF_DETECTION_FINE", "gliner").strip().lower()
+MOTEURS_CONNUS = ("gliner", "presidio")
+DEMANDES = [
+    nom.strip().lower()
+    for nom in os.environ.get("CHEF_DETECTION_FINE", "gliner").split(",")
+    if nom.strip()
+]
+STRICTE = os.environ.get("CHEF_LOUPE_STRICTE", "0").strip() == "1"
 SEUIL = _env_float("CHEF_SEUIL_FIN", 0.4)
 MODELE_GLINER = os.environ.get("CHEF_MODELE_GLINER", "urchade/gliner_multi_pii-v1")
 MODELE_SPACY_FR = os.environ.get("CHEF_MODELE_SPACY", "fr_core_news_md")
@@ -58,9 +73,13 @@ LABELS_PII = [
     "medical condition", "bank account number",
 ]
 
-# Etat interne : None = pas encore essaye ; False = indisponible ; sinon le moteur.
-_moteur_charge = None
-_erreur_chargement = None
+# Etat interne, rempli au premier appel (sous verrou) :
+#   _initialise : True une fois la tentative de chargement faite
+#   _moteurs : liste de (nom, fonction_analyser)
+#   _indisponibles : liste de "nom : raison" pour les moteurs demandes en echec
+_initialise = False
+_moteurs = []
+_indisponibles = []
 _verrou = threading.Lock()            # empeche deux chargements simultanes
 _verrou_inference = threading.Lock()  # une seule analyse a la fois
 
@@ -107,47 +126,58 @@ def _charger_presidio():
     return analyser
 
 
-def _obtenir_moteur():
-    """Charge le moteur au premier appel. False si indisponible (et on s'en souvient)."""
-    global _moteur_charge, _erreur_chargement
-    if _moteur_charge is not None:
-        return _moteur_charge
+_CHARGEURS = {"gliner": _charger_gliner, "presidio": _charger_presidio}
+
+
+def _initialiser():
+    """Charge les moteurs demandes au premier appel (une seule fois, sous verrou)."""
+    global _initialise
+    if _initialise:
+        return
     with _verrou:
-        if _moteur_charge is not None:  # un autre thread vient de le charger
-            return _moteur_charge
-        if MOTEUR == "off":
-            _erreur_chargement = "desactivee (CHEF_DETECTION_FINE=off)"
-            _moteur_charge = False
-            return False
-        if MOTEUR not in MOTEURS_CONNUS:
-            _erreur_chargement = "valeur inconnue '%s' -> loupe desactivee (valeurs : gliner, presidio, off)" % MOTEUR
-            _moteur_charge = False
-            return False
-        try:
-            _moteur_charge = _charger_presidio() if MOTEUR == "presidio" else _charger_gliner()
-        except Exception as erreur:  # lib absente, modele introuvable, etc.
-            _erreur_chargement = "%s indisponible : %s" % (MOTEUR, erreur.__class__.__name__)
-            _moteur_charge = False
-    return _moteur_charge
+        if _initialise:
+            return
+        if DEMANDES == ["off"]:
+            _indisponibles.append("desactivee (CHEF_DETECTION_FINE=off)")
+        else:
+            for nom in DEMANDES:
+                if nom == "off":
+                    continue
+                if nom not in MOTEURS_CONNUS:
+                    _indisponibles.append("'%s' inconnu (valeurs : gliner, presidio, off)" % nom)
+                    continue
+                try:
+                    _moteurs.append((nom, _CHARGEURS[nom]()))
+                except Exception as erreur:  # lib absente, modele introuvable...
+                    _indisponibles.append("%s indisponible : %s" % (nom, erreur.__class__.__name__))
+        _initialise = True
 
 
 def statut():
-    """Pour le diagnostic et le journal : 'gliner', 'presidio', ou la raison de l'absence."""
-    moteur = _obtenir_moteur()
-    return MOTEUR if moteur else (_erreur_chargement or "indisponible")
+    """Pour le diagnostic et le journal : moteurs actifs + indisponibilites."""
+    _initialiser()
+    actifs = "+".join(nom for nom, _ in _moteurs) or "aucun moteur actif"
+    if _indisponibles:
+        return "%s (%s)" % (actifs, " ; ".join(_indisponibles))
+    return actifs
 
 
 def detecter_sensibilite_fine(texte):
-    """Retourne les codes PII trouves par la loupe ([] si loupe absente).
+    """Union des codes PII trouves par TOUS les moteurs actifs.
 
     Toujours sans danger d'appel : ne leve jamais, ne retourne jamais None.
-    Panne en cours d'analyse -> ["loupe-en-panne"] (prudence : local).
+    - Panne d'un moteur pendant l'analyse -> ajoute "loupe-en-panne" (prudence).
+    - Mode strict : un moteur demande mais non charge -> "loupe-en-panne"
+      systematique tant que la defense promise n'est pas complete.
     """
-    moteur = _obtenir_moteur()
-    if not moteur:
-        return []
-    try:
-        with _verrou_inference:
-            return moteur(texte)
-    except Exception:  # panne en cours de route : les regles v1 restent le filet
-        return ["loupe-en-panne"]
+    _initialiser()
+    codes = set()
+    if STRICTE and _indisponibles and DEMANDES != ["off"]:
+        codes.add("loupe-en-panne")
+    for _nom, analyser in _moteurs:
+        try:
+            with _verrou_inference:
+                codes.update(analyser(texte))
+        except Exception:  # panne en cours de route : les regles v1 restent le filet
+            codes.add("loupe-en-panne")
+    return sorted(codes)

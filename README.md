@@ -92,6 +92,19 @@ confidentialite. Les longs textes sont decoupes en fenetres qui se chevauchent
 (GLiNER ne lit que ~384 jetons d'un coup : sans decoupage, une donnee enfouie dans
 un long document serait invisible).
 
+### Double verification (donnees ultra-sensibles : sante, avocat)
+
+La loupe est MULTI-MOTEURS : `CHEF_DETECTION_FINE=gliner,presidio` fait tourner les
+deux detecteurs sur chaque demande et fait l'union des trouvailles. Il suffit qu'UN
+moteur voie une donnee pour qu'elle reste en local. Trois couches au total : regles
+regex (formats : IBAN, secu, email) + GLiNER (sens : noms, adresses, diagnostics) +
+Presidio (patterns et NER, angle different). Installation : `install.sh --fine-double`
+(ou `install.ps1 -FineDouble`). Et `CHEF_LOUPE_STRICTE=1` pour exiger que la defense
+promise soit complete : si un moteur demande manque au demarrage, tout reste en local
+tant qu'il n'est pas repare. Honnetete : aucun cumul n'atteint 100 % de rappel ; la
+classe vraiment ultra-sensible doit rester en local PAR DEFAUT, la loupe ne sert qu'a
+attraper ce qui tenterait d'en sortir.
+
 ## Durcissements issus de la revue adversariale (juin 2026)
 
 Trois relecteurs contradicteurs (securite, concurrence, exactitude des API) ont attaque

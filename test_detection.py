@@ -108,55 +108,103 @@ class TestExtraction(unittest.TestCase):
 
 
 class TestLoupe(unittest.TestCase):
-    """La detection fine (loupe) testee avec un moteur factice : pas besoin
-    d'installer GLiNER pour prouver le couplage, le filet de panne et l'union."""
+    """La detection fine (loupe) testee avec des moteurs factices : pas besoin
+    d'installer GLiNER/Presidio pour prouver le couplage, l'union multi-moteurs,
+    le filet de panne et le mode strict."""
 
     def setUp(self):
-        self._etat_initial = detection_fine._moteur_charge
+        self._etat = (detection_fine._initialise, list(detection_fine._moteurs),
+                      list(detection_fine._indisponibles), detection_fine.STRICTE)
 
     def tearDown(self):
-        detection_fine._moteur_charge = self._etat_initial
+        (detection_fine._initialise, moteurs, indispo, detection_fine.STRICTE) = self._etat
+        detection_fine._moteurs[:] = moteurs
+        detection_fine._indisponibles[:] = indispo
+
+    def _installe(self, moteurs, indisponibles=(), stricte=False):
+        detection_fine._initialise = True
+        detection_fine._moteurs[:] = moteurs
+        detection_fine._indisponibles[:] = list(indisponibles)
+        detection_fine.STRICTE = stricte
 
     def test_loupe_absente_regles_seules(self):
         # Sur cette machine GLiNER n'est pas installe : la loupe doit se
         # declarer indisponible SANS casser, et les regles v1 continuent.
-        detection_fine._moteur_charge = None  # force une nouvelle tentative
+        detection_fine._initialise = False
+        detection_fine._moteurs[:] = []
+        detection_fine._indisponibles[:] = []
         self.assertEqual([], detection_fine.detecter_sensibilite_fine("texte anodin"))
         codes = detecter_sensibilite_complete("Le patient revient lundi.")
         self.assertIn("mot-cle:patient", codes)
 
     def test_union_regles_plus_loupe(self):
         # Moteur factice : la loupe voit un nom de personne que les regex ratent.
-        detection_fine._moteur_charge = lambda texte: ["pii:person"]
+        self._installe([("factice", lambda texte: ["pii:person"])])
         codes = detecter_sensibilite_complete("Convoquer Jean Exemple au 06 12 34 56 78.")
         self.assertIn("telephone_fr", codes)   # serrure v1
         self.assertIn("pii:person", codes)     # loupe
 
+    def test_double_verification_union_des_moteurs(self):
+        # Deux moteurs en parallele : il suffit qu'UN voie pour que ce soit vu.
+        self._installe([
+            ("moteur-a", lambda texte: ["pii:person"]),
+            ("moteur-b", lambda texte: ["pii:address"]),
+        ])
+        codes = detection_fine.detecter_sensibilite_fine("texte")
+        self.assertIn("pii:person", codes)
+        self.assertIn("pii:address", codes)
+
+    def test_double_verification_un_moteur_en_panne(self):
+        # Le moteur B crashe : on garde les trouvailles de A ET on force la prudence.
+        def casse(texte):
+            raise RuntimeError("oom")
+        self._installe([("moteur-a", lambda texte: ["pii:person"]), ("moteur-b", casse)])
+        codes = detection_fine.detecter_sensibilite_fine("texte")
+        self.assertIn("pii:person", codes)
+        self.assertIn("loupe-en-panne", codes)
+
+    def test_mode_strict_moteur_manquant(self):
+        # Mode strict : un moteur demande mais indisponible -> prudence permanente.
+        self._installe([("moteur-a", lambda texte: [])],
+                       indisponibles=["presidio indisponible : ImportError"], stricte=True)
+        self.assertIn("loupe-en-panne", detection_fine.detecter_sensibilite_fine("texte"))
+
+    def test_mode_normal_moteur_manquant_continue(self):
+        # Mode normal : moteur manquant = signale dans statut(), pas de blocage.
+        self._installe([("moteur-a", lambda texte: [])],
+                       indisponibles=["presidio indisponible : ImportError"], stricte=False)
+        self.assertEqual([], detection_fine.detecter_sensibilite_fine("texte"))
+        self.assertIn("presidio indisponible", detection_fine.statut())
+
     def test_loupe_seule_detecte(self):
         # Un nom seul, sans aucun motif regex : seul la loupe le voit.
-        detection_fine._moteur_charge = lambda texte: ["pii:person"]
+        self._installe([("factice", lambda texte: ["pii:person"])])
         codes = detecter_sensibilite_complete("Prepare une note sur Jean Exemple.")
         self.assertEqual(["pii:person"], codes)
 
     def test_panne_de_loupe_force_la_prudence(self):
         def moteur_casse(texte):
             raise RuntimeError("plus de memoire")
-        detection_fine._moteur_charge = moteur_casse
+        self._installe([("factice", moteur_casse)])
         codes = detecter_sensibilite_complete("texte quelconque")
         self.assertIn("loupe-en-panne", codes)  # panne -> traite comme sensible -> local
 
     def test_valeur_moteur_inconnue_desactive_proprement(self):
         # Faute de frappe dans CHEF_DETECTION_FINE : pas de telechargement
-        # surprise de 2 Go, loupe coupee, statut explicite.
-        ancien = detection_fine.MOTEUR
+        # surprise de 2 Go, moteur ignore, statut explicite.
+        ancien = detection_fine.DEMANDES
         try:
-            detection_fine.MOTEUR = "gilner"  # typo volontaire
-            detection_fine._moteur_charge = None
+            detection_fine.DEMANDES = ["gilner"]  # typo volontaire
+            detection_fine._initialise = False
+            detection_fine._moteurs[:] = []
+            detection_fine._indisponibles[:] = []
             self.assertEqual([], detection_fine.detecter_sensibilite_fine("texte"))
-            self.assertIn("valeur inconnue", detection_fine.statut())
+            self.assertIn("inconnu", detection_fine.statut())
         finally:
-            detection_fine.MOTEUR = ancien
-            detection_fine._moteur_charge = None
+            detection_fine.DEMANDES = ancien
+            detection_fine._initialise = False
+            detection_fine._moteurs[:] = []
+            detection_fine._indisponibles[:] = []
 
     def test_fenetres_recouvrement(self):
         # Texte long : plusieurs fenetres, qui se chevauchent, couvrant TOUT

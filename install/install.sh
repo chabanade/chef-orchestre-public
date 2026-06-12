@@ -22,9 +22,16 @@ echo "== 3/4 LiteLLM (le standardiste) =="
 python3 -m pip install --upgrade "litellm[proxy]"
 
 # Option --fine : installe la loupe (detection fine PII, GLiNER ~1-2 Go au 1er lancement)
-if [ "${1:-}" = "--fine" ]; then
+# Option --fine-double : GLiNER + Presidio + modele spaCy francais (double verification,
+# pour donnees ultra-sensibles ; mettre CHEF_DETECTION_FINE=gliner,presidio dans .env)
+if [ "${1:-}" = "--fine" ] || [ "${1:-}" = "--fine-double" ]; then
   echo "== 3bis/4 Detection fine (la loupe, GLiNER) =="
   python3 -m pip install -r "${ICI}/requirements-fine.txt"
+fi
+if [ "${1:-}" = "--fine-double" ]; then
+  echo "== 3ter/4 Double verification (Presidio + spaCy francais) =="
+  python3 -m pip install presidio-analyzer spacy
+  python3 -m spacy download fr_core_news_md
 fi
 
 echo "== 4/4 Fichier .env =="
