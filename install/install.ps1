@@ -20,6 +20,12 @@ ollama pull $Modele
 Write-Host "== 3/4 LiteLLM (le standardiste) =="
 python -m pip install --upgrade "litellm[proxy]"
 
+# Parametre -Fine : installe la loupe (detection fine PII, GLiNER ~1-2 Go au 1er lancement)
+if ($args -contains "-Fine") {
+    Write-Host "== 3bis/4 Detection fine (la loupe, GLiNER) =="
+    python -m pip install -r "$Ici\requirements-fine.txt"
+}
+
 Write-Host "== 4/4 Fichier .env =="
 if (-not (Test-Path "$Ici\.env")) {
     Copy-Item "$Ici\.env.example" "$Ici\.env"

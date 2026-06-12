@@ -21,6 +21,12 @@ ollama pull "${MODELE}"
 echo "== 3/4 LiteLLM (le standardiste) =="
 python3 -m pip install --upgrade "litellm[proxy]"
 
+# Option --fine : installe la loupe (detection fine PII, GLiNER ~1-2 Go au 1er lancement)
+if [ "${1:-}" = "--fine" ]; then
+  echo "== 3bis/4 Detection fine (la loupe, GLiNER) =="
+  python3 -m pip install -r "${ICI}/requirements-fine.txt"
+fi
+
 echo "== 4/4 Fichier .env =="
 if [ ! -f "${ICI}/.env" ]; then
   cp "${ICI}/.env.example" "${ICI}/.env"

@@ -1,19 +1,36 @@
 # -*- coding: utf-8 -*-
 """
-Tests de la serrure (detection.py) - zero dependance, stdlib uniquement.
+Tests de la serrure (detection.py + detection_fine.py) - stdlib uniquement.
 Lancer : python test_detection.py
-Toutes les donnees sont FICTIVES.
+Toutes les donnees sont FICTIVES. Inclut les cas trouves par la revue
+adversariale du 12/06/2026 (image non inspectable, IBAN minuscule, fenetres
+GLiNER, valeur de configuration erronee).
 """
 
 import unittest
 
-from detection import detecter_complexite, detecter_sensibilite
+import detection_fine
+from detection import (
+    _env_int,
+    detecter_complexite,
+    detecter_sensibilite,
+    detecter_sensibilite_complete,
+    extraire_texte,
+)
 
 
 class TestSensibilite(unittest.TestCase):
     def test_iban_detecte(self):
         codes = detecter_sensibilite("Le reglement arrive sur FR76 3000 6000 0112 3456 7890 189 merci.")
         self.assertIn("iban", codes)
+
+    def test_iban_minuscule_detecte(self):
+        # Trou trouve par la revue : un IBAN tape en minuscules doit etre vu.
+        codes = detecter_sensibilite("vire sur fr7630006000011234567890189 stp")
+        self.assertIn("iban", codes)
+
+    def test_mot_iban_seul_detecte(self):
+        self.assertIn("mot-cle:iban", detecter_sensibilite("Envoie-moi ton IBAN par retour."))
 
     def test_email_detecte(self):
         self.assertIn("email", detecter_sensibilite("Contacter jean.exemple@cabinet-test.fr pour le dossier."))
@@ -42,6 +59,127 @@ class TestSensibilite(unittest.TestCase):
         # adjectif "patiente" != mot entier "patient"
         codes = detecter_sensibilite("Une approche patiente donne de meilleurs resultats.")
         self.assertNotIn("mot-cle:patient", codes)
+
+
+class TestExtraction(unittest.TestCase):
+    """extraire_texte doit tout lire, et lever le drapeau sur ce qu'il ne lit pas."""
+
+    def test_messages_simples(self):
+        texte, drapeau = extraire_texte({"messages": [{"role": "user", "content": "bonjour"}]})
+        self.assertEqual("bonjour", texte)
+        self.assertFalse(drapeau)
+
+    def test_blocs_textes(self):
+        data = {"messages": [{"role": "user", "content": [{"type": "text", "text": "un"}, {"type": "text", "text": "deux"}]}]}
+        texte, drapeau = extraire_texte(data)
+        self.assertIn("un", texte)
+        self.assertIn("deux", texte)
+        self.assertFalse(drapeau)
+
+    def test_image_leve_le_drapeau(self):
+        # Trou BLOQUANT trouve par la revue : une image doit lever le drapeau.
+        data = {"messages": [{"role": "user", "content": [
+            {"type": "text", "text": "analyse ce document"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,xxxx"}},
+        ]}]}
+        texte, drapeau = extraire_texte(data)
+        self.assertIn("analyse", texte)
+        self.assertTrue(drapeau)
+
+    def test_prompt_legacy_str(self):
+        # Trou BLOQUANT trouve par la revue : l'endpoint legacy /completions.
+        texte, drapeau = extraire_texte({"prompt": "le patient revient lundi"})
+        self.assertIn("patient", texte)
+        self.assertFalse(drapeau)
+
+    def test_prompt_legacy_liste(self):
+        texte, _ = extraire_texte({"prompt": ["un", "deux"]})
+        self.assertIn("un", texte)
+        self.assertIn("deux", texte)
+
+    def test_input_responses(self):
+        texte, _ = extraire_texte({"input": "verifie cet iban fr7630006000011234567890189"})
+        self.assertIn("iban", texte)
+
+    def test_input_blocs(self):
+        data = {"input": [{"role": "user", "content": [{"type": "input_text", "text": "?"}]}]}
+        _, drapeau = extraire_texte(data)
+        self.assertTrue(drapeau)  # type de bloc inconnu -> prudence
+
+
+class TestLoupe(unittest.TestCase):
+    """La detection fine (loupe) testee avec un moteur factice : pas besoin
+    d'installer GLiNER pour prouver le couplage, le filet de panne et l'union."""
+
+    def setUp(self):
+        self._etat_initial = detection_fine._moteur_charge
+
+    def tearDown(self):
+        detection_fine._moteur_charge = self._etat_initial
+
+    def test_loupe_absente_regles_seules(self):
+        # Sur cette machine GLiNER n'est pas installe : la loupe doit se
+        # declarer indisponible SANS casser, et les regles v1 continuent.
+        detection_fine._moteur_charge = None  # force une nouvelle tentative
+        self.assertEqual([], detection_fine.detecter_sensibilite_fine("texte anodin"))
+        codes = detecter_sensibilite_complete("Le patient revient lundi.")
+        self.assertIn("mot-cle:patient", codes)
+
+    def test_union_regles_plus_loupe(self):
+        # Moteur factice : la loupe voit un nom de personne que les regex ratent.
+        detection_fine._moteur_charge = lambda texte: ["pii:person"]
+        codes = detecter_sensibilite_complete("Convoquer Jean Exemple au 06 12 34 56 78.")
+        self.assertIn("telephone_fr", codes)   # serrure v1
+        self.assertIn("pii:person", codes)     # loupe
+
+    def test_loupe_seule_detecte(self):
+        # Un nom seul, sans aucun motif regex : seul la loupe le voit.
+        detection_fine._moteur_charge = lambda texte: ["pii:person"]
+        codes = detecter_sensibilite_complete("Prepare une note sur Jean Exemple.")
+        self.assertEqual(["pii:person"], codes)
+
+    def test_panne_de_loupe_force_la_prudence(self):
+        def moteur_casse(texte):
+            raise RuntimeError("plus de memoire")
+        detection_fine._moteur_charge = moteur_casse
+        codes = detecter_sensibilite_complete("texte quelconque")
+        self.assertIn("loupe-en-panne", codes)  # panne -> traite comme sensible -> local
+
+    def test_valeur_moteur_inconnue_desactive_proprement(self):
+        # Faute de frappe dans CHEF_DETECTION_FINE : pas de telechargement
+        # surprise de 2 Go, loupe coupee, statut explicite.
+        ancien = detection_fine.MOTEUR
+        try:
+            detection_fine.MOTEUR = "gilner"  # typo volontaire
+            detection_fine._moteur_charge = None
+            self.assertEqual([], detection_fine.detecter_sensibilite_fine("texte"))
+            self.assertIn("valeur inconnue", detection_fine.statut())
+        finally:
+            detection_fine.MOTEUR = ancien
+            detection_fine._moteur_charge = None
+
+    def test_fenetres_recouvrement(self):
+        # Texte long : plusieurs fenetres, qui se chevauchent, couvrant TOUT
+        # le texte (correctif de la troncature silencieuse de GLiNER).
+        texte = "x" * 5000
+        fenetres = detection_fine._fenetres(texte)
+        self.assertGreater(len(fenetres), 1)
+        self.assertTrue(all(len(f) <= detection_fine.FENETRE_CARACTERES for f in fenetres))
+        total = sum(len(f) for f in fenetres)
+        self.assertGreaterEqual(total, len(texte))  # tout est couvert (avec recouvrement)
+
+    def test_fenetre_unique_texte_court(self):
+        self.assertEqual(["abc"], detection_fine._fenetres("abc"))
+
+
+class TestRobustesse(unittest.TestCase):
+    def test_seuil_env_malforme_ne_crashe_pas(self):
+        import os
+        os.environ["TEST_SEUIL_CASSE"] = "abc"
+        try:
+            self.assertEqual(4000, _env_int("TEST_SEUIL_CASSE", 4000))
+        finally:
+            del os.environ["TEST_SEUIL_CASSE"]
 
 
 class TestComplexite(unittest.TestCase):

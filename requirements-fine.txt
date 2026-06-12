@@ -1,0 +1,13 @@
+# Detection fine (la loupe) - OPTIONNELLE. La serrure v1 marche sans.
+# Choix par CHEF_DETECTION_FINE : "gliner" (defaut), "presidio", ou "off".
+# Versions epinglees (reproductibilite) : a remonter volontairement, pas par accident.
+
+# Moteur par defaut : GLiNER (Apache 2.0), modele multi-PII 6 langues dont le
+# francais (urchade/gliner_multi_pii-v1, telecharge au premier lancement).
+gliner==0.2.26
+
+# Variante Presidio (MIT) : decommenter les 2 lignes, puis telecharger le
+# modele francais : python -m spacy download fr_core_news_md
+# (couverture francaise partielle des detecteurs Presidio : GLiNER conseille)
+# presidio-analyzer
+# spacy

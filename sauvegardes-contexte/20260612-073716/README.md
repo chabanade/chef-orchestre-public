@@ -40,11 +40,9 @@ local. Deux raisons juridiques, verifiees sur sources primaires :
 | Fichier | Role |
 |---|---|
 | `config.yaml` | La table d'aiguillage LiteLLM : routes `local-sensible`, `cloud-lourd`, `chef-auto` |
-| `detection.py` | Le cerveau de la serrure : extraction du texte, sensibilite, complexite (Python pur, zero dependance) |
-| `detection_fine.py` | La loupe optionnelle : detection fine PII (GLiNER ou Presidio), fenetres glissantes |
-| `chef_orchestre_hook.py` | La plomberie LiteLLM : fail-closed, default-deny, journal |
-| `test_detection.py` | 29 tests unitaires (stdlib uniquement) : `python test_detection.py` |
-| `requirements-fine.txt` | Dependances optionnelles de la loupe (versions epinglees) |
+| `detection.py` | Le cerveau de la serrure : detection sensibilite + complexite (Python pur, zero dependance) |
+| `chef_orchestre_hook.py` | La plomberie LiteLLM : fail-closed, journal |
+| `test_detection.py` | 12 tests unitaires (stdlib uniquement) : `python test_detection.py` |
 | `demo.py` | La demonstration en 4 actes (voir ci-dessous) |
 | `install/install.sh` / `install.ps1` | Installation machine cible (Linux GPU ou Windows) |
 | `start.sh` / `start.ps1` | Lancement du routeur (Ollama + LiteLLM) |
@@ -74,47 +72,12 @@ Sous Windows : `install\install.ps1` puis `start.ps1`.
 Modele local par defaut : `qwen3:4b` (Apache 2.0, ~2,6 Go, tourne meme sur CPU).
 Sur une machine GPU, passer a `qwen3:14b` ou plus : variable `OLLAMA_MODEL` dans `.env`.
 
-## La loupe : detection fine PII (optionnelle)
-
-En plus de la serrure a regles, une loupe detecte ce que les regex ratent : noms de
-personnes, adresses, organisations, diagnostics... Moteur par defaut :
-[GLiNER](https://github.com/urchade/GLiNER) avec le modele `urchade/gliner_multi_pii-v1`
-(Apache 2.0, 6 langues dont le francais, tourne sur CPU). Variante :
-[Microsoft Presidio](https://github.com/microsoft/presidio) (MIT) + spaCy francais.
-
-Installation : `bash install/install.sh --fine` (ou `install.ps1 -Fine`). Reglages :
-`CHEF_DETECTION_FINE` (gliner / presidio / off) et `CHEF_SEUIL_FIN` dans `.env`.
-
-Securite de la loupe : elle COMPLETE les regles (union), ne les remplace jamais.
-Loupe absente -> regles seules (journalise). Loupe en panne -> la demande est traitee
-comme sensible et reste en local : une panne degrade la puissance, jamais la
-confidentialite. Les longs textes sont decoupes en fenetres qui se chevauchent
-(GLiNER ne lit que ~384 jetons d'un coup : sans decoupage, une donnee enfouie dans
-un long document serait invisible).
-
-## Durcissements issus de la revue adversariale (juin 2026)
-
-Trois relecteurs contradicteurs (securite, concurrence, exactitude des API) ont attaque
-le code ; chaque correctif est couvert par un test :
-
-- **Images et fichiers = sensibles par defaut.** Un bloc non textuel (photo de carte
-  vitale, PDF...) est invisible aux regex : il leve le drapeau "contenu-non-inspectable"
-  et la demande reste en local (ou est refusee si elle visait le cloud).
-- **Tous les formats d'appel couverts** : messages, prompt legacy (/completions),
-  input (/responses), /v1/messages. Un type d'appel que la serrure ne sait pas
-  inspecter et qui vise une route non locale est REFUSE (default-deny).
-- **IBAN en minuscules** detecte ; mots-cles "iban", "bic" ajoutes.
-- **Panne de detection -> local**, jamais une erreur 500, jamais le cloud.
-- **Un seul calcul de loupe a la fois** (verrou d'inference) et chargement du modele
-  protege contre les doubles demarrages.
-- **Configuration blindee** : seuil malforme -> valeur par defaut ; moteur de loupe
-  inconnu (faute de frappe) -> loupe coupee proprement, pas de telechargement surprise.
-
 ## Limites assumees (honnetete)
 
-- Le detecteur a regles peut rater une donnee sensible mal ecrite, et la loupe GLiNER
-  reduit ce risque sans le supprimer : aucun detecteur n'est parfait. Mesurez le taux
-  de faux negatifs sur VOS documents avant un usage reel.
+- Le detecteur v1 est a REGLES (regex + mots-cles francais) : simple, lisible, auditable,
+  mais il peut rater une donnee sensible mal ecrite (faux negatif = fuite). Etape 2 prevue :
+  brancher [Microsoft Presidio](https://github.com/microsoft/presidio) (MIT) ou
+  [GLiNER](https://github.com/urchade/GLiNER) (Apache 2.0) pour la detection fine.
 - Le routeur garantit OU va la donnee, pas la qualite de la reponse du modele local.
 - Les seuils (longueur, mots-cles) sont des reglages de depart, a calibrer sur vos cas.
 - Verifiez chaque affirmation juridique avec un juriste avant un usage professionnel reel :
