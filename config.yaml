@@ -1,0 +1,41 @@
+# ============================================================
+# Le Chef d'Orchestre - table d'aiguillage LiteLLM
+# ============================================================
+# 3 routes :
+#   local-sensible : le modele qui tourne SUR la machine (Ollama).
+#                    Seule route autorisee pour les donnees sensibles.
+#   cloud-lourd    : le modele puissant dans le cloud (Anthropic).
+#                    Interdit aux donnees sensibles (fail-closed).
+#   chef-auto      : la route "magique" : le hook decide tout seul.
+#
+# Le modele local se regle via OLLAMA_MODEL dans .env
+# (qwen3:4b par defaut ; qwen3:14b ou plus sur la machine GPU).
+# ============================================================
+
+model_list:
+  - model_name: local-sensible
+    litellm_params:
+      model: ollama_chat/qwen3:4b
+      api_base: os.environ/OLLAMA_API_BASE
+
+  - model_name: cloud-lourd
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # Route virtuelle : le hook remplace "chef-auto" par la bonne route.
+  # On la declare vers le local par defaut : si le hook etait absent ou
+  # casse, TOUT partirait en local (jamais l'inverse). Fail-closed by design.
+  - model_name: chef-auto
+    litellm_params:
+      model: ollama_chat/qwen3:4b
+      api_base: os.environ/OLLAMA_API_BASE
+
+litellm_settings:
+  # La serrure : detection sensibilite + complexite + journal + fail-closed
+  callbacks: chef_orchestre_hook.proxy_handler_instance
+  drop_params: true
+
+general_settings:
+  # Cle d'acces au routeur lui-meme (a definir dans .env, jamais ici)
+  master_key: os.environ/LITELLM_MASTER_KEY

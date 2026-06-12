@@ -1,0 +1,10 @@
+# Secrets : jamais dans git
+.env
+
+# Journal de routage (metadonnees locales, pas du code)
+journal-routage.jsonl
+
+# Python
+__pycache__/
+*.pyc
+.venv/
