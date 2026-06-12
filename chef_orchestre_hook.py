@@ -36,7 +36,13 @@ from detection import (
     extraire_texte,
     journaliser,
 )
-from greffier import Greffier
+from greffier import Greffier, jetons_restants
+
+CONSIGNE_JETONS = (
+    "Des jetons de pseudonymisation au format <NOM_N> (par exemple <IBAN_1>) "
+    "figurent dans cette conversation. Recopie-les EXACTEMENT tels quels dans ta "
+    "reponse, sans les modifier, les reformuler ni les completer."
+)
 
 ROUTE_LOCALE = os.environ.get("CHEF_ROUTE_LOCALE", "local-sensible")
 ROUTE_CLOUD = os.environ.get("CHEF_ROUTE_CLOUD", "cloud-lourd")
@@ -129,6 +135,10 @@ class ChefOrchestre(CustomLogger):
                 raise _refus(motifs_restants,
                              "Route pseudo refusee : il reste du sensible que le greffier ne sait pas "
                              "remplacer (noms, contexte metier). Utiliser la route locale.")
+            if nb_jetons and isinstance(data.get("messages"), list):
+                # Consigne anti-casse : le modele doit recopier les jetons
+                # tels quels (risque n1 releve par l'etude du 12/06).
+                data["messages"] = [{"role": "system", "content": CONSIGNE_JETONS}] + data["messages"]
             identifiant = data.get("litellm_call_id") or id(data)
             # Purge de securite : un appel qui a echoue en route ne doit pas
             # laisser son armoire s'accumuler en memoire.
@@ -185,12 +195,19 @@ class ChefOrchestre(CustomLogger):
         if greffier is None:
             return response
         try:
+            orphelins = []
             for choix in getattr(response, "choices", []) or []:
                 message = getattr(choix, "message", None)
                 if message is not None and isinstance(getattr(message, "content", None), str):
                     message.content = greffier.repersonnaliser(message.content)
-            journaliser("pseudo-retour-repersonnalise", None, None,
-                        ["jetons:" + str(len(greffier.table))], 0)
+                    orphelins += jetons_restants(message.content)
+            # Controle d'integrite : un jeton non restaure (abime au-dela du
+            # matching tolerant, ou hallucine par le modele) reste opaque dans
+            # la reponse (aucune fuite) mais doit etre VISIBLE au journal.
+            motifs = ["jetons:" + str(len(greffier.table))]
+            if orphelins:
+                motifs.append("jetons-non-restaures:" + str(len(orphelins)))
+            journaliser("pseudo-retour-repersonnalise", None, None, motifs, 0)
         finally:
             greffier.detruire()
         return response

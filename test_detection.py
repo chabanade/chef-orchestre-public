@@ -287,6 +287,35 @@ class TestGreffier(unittest.TestCase):
         self.assertEqual(["<IBAN_1>"], jetons_restants("Il reste <IBAN_1> ici"))
         self.assertEqual([], jetons_restants("rien"))
 
+    def test_jeton_abime_par_le_modele_rattrape(self):
+        # Risque n1 de l'etude 12/06 : le LLM abime parfois un jeton.
+        # Le matching tolerant (idee LLM Guard) doit rattraper les variantes.
+        from greffier import Greffier
+        g = Greffier()
+        g.pseudonymiser_texte("IBAN FR7630006000011234567890189")
+        for variante in ("<iban 1>", "< IBAN_1 >", "<Iban-1>", "<IBAN  _ 1>"):
+            restauree = g.repersonnaliser("Le compte %s est valide." % variante)
+            self.assertIn("FR7630006000011234567890189", restauree, variante)
+
+    def test_jeton_oprhelin_laisse_opaque(self):
+        # Un jeton hallucine (absent de la table) reste tel quel : pas de
+        # devinette, pas de fuite, et jetons_restants le rend visible.
+        from greffier import Greffier, jetons_restants
+        g = Greffier()
+        g.pseudonymiser_texte("ecrire a jean@exemple.fr")
+        reponse = g.repersonnaliser("Contact : <EMAIL_1> et aussi <IBAN_9>.")
+        self.assertIn("jean@exemple.fr", reponse)
+        self.assertEqual(["<IBAN_9>"], jetons_restants(reponse))
+
+    def test_valeur_avec_caracteres_speciaux_regex(self):
+        # La valeur restauree ne doit jamais etre interpretee par le moteur
+        # de regex (anti-surprise backslash / dollar).
+        from greffier import Greffier
+        g = Greffier()
+        g.table["<EMAIL_1>"] = r"jean\g<0>$1@exemple.fr"  # valeur piegee artificielle
+        restauree = g.repersonnaliser("voir <email 1> svp")
+        self.assertIn(r"jean\g<0>$1@exemple.fr", restauree)
+
 
 class TestRobustesse(unittest.TestCase):
     def test_seuil_env_malforme_ne_crashe_pas(self):

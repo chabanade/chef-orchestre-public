@@ -152,6 +152,24 @@ direct (criteres G29 : individualisation, correlation, inference). Cette route
 REDUIT fortement le risque pour les taches mixtes ; elle ne remplace pas le local
 strict pour l'ultra-sensible, et la minimisation reste due.
 
+### Comparaison avec l'existant (etude du 12/06/2026)
+
+Le greffier a ete compare aux solutions publiques : LLM Guard (jumeau conceptuel
+avec son Vault, mais anglais/chinois seulement et au ralenti), Presidio
+encrypt/decrypt (le secret chiffre voyage AVEC le prompt : une fuite de cle
+rendrait les archives dechiffrables, la ou une table brulee ne laisse rien),
+guardrail Presidio natif de LiteLLM (`output_parse_pii` : un vrai aller-retour
+natif, recommande en DEUXIEME rideau de defense, mais sans refus fail-closed),
+PII-Shield (recognizers francais MIT interessants, table sur disque 7 jours),
+Kong ai-sanitizer (payant, ferme), LangChain PresidioReversibleAnonymizer
+(archive, mort). Constat : la combinaison francais natif + table en memoire
+brulee + refus fail-closed n'existe dans aucun outil public a date.
+
+Durci suite a l'etude (risque principal : jetons abimes par le modele) :
+consigne systeme automatique, matching tolerant au retour (`<iban 1>`,
+`< IBAN_1 >`, `<Iban-1>` rattrapes), et controle d'integrite journalise
+(jeton irrecuperable = laisse opaque : zero fuite, zero devinette).
+
 ## Durcissements issus de la revue adversariale (juin 2026)
 
 Trois relecteurs contradicteurs (securite, concurrence, exactitude des API) ont attaque

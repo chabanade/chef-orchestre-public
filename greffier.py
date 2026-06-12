@@ -100,11 +100,26 @@ class Greffier:
         return len(self.table)
 
     def repersonnaliser(self, texte):
-        """RETOUR : remet les vraies valeurs a la place des jetons (en local)."""
+        """RETOUR : remet les vraies valeurs a la place des jetons (en local).
+
+        Matching en deux temps (idee reprise du scanner Deanonymize de LLM Guard) :
+        1. exact : <IBAN_1> tel quel ;
+        2. tolerant : le modele abime parfois un jeton (<iban 1>, < IBAN_1 >,
+           <Iban-1>) ; une regex souple par jeton rattrape ces variantes.
+        Un jeton irrecuperable est LAISSE TEL QUEL (opaque, donc aucune fuite)
+        et signale par jetons_restants : on ne devine jamais une valeur.
+        """
         if not isinstance(texte, str) or not self.table:
             return texte
         for jeton, valeur in self.table.items():
-            texte = texte.replace(jeton, valeur)
+            if jeton in texte:
+                texte = texte.replace(jeton, valeur)
+                continue
+            # variante abimee : espaces autour, _ devenu espace ou tiret, casse
+            interieur = re.escape(jeton[1:-1]).replace("_", r"[\s_\-]+")
+            texte = re.sub(r"<\s*" + interieur + r"\s*>",
+                           lambda _m, v=valeur: v,  # lambda : la valeur n'est jamais interpretee
+                           texte, flags=re.IGNORECASE)
         return texte
 
     def detruire(self):
