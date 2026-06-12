@@ -1,4 +1,4 @@
-# Secrets : jamais dans git
+# Secrets : jamais dans git (Regle absolue)
 .env
 
 # Journal de routage (metadonnees locales, pas du code)
@@ -11,3 +11,5 @@ __pycache__/
 
 # Sauvegardes auto locales (jamais dans git)
 sauvegardes-contexte/
+
+alertes-couverture.jsonl

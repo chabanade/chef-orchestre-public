@@ -29,10 +29,12 @@ import os
 from fastapi import HTTPException
 from litellm.integrations.custom_logger import CustomLogger
 
+import vigie
 from detection import (
-    CODES_TECHNIQUES,
     detecter_complexite,
     detecter_sensibilite_complete,
+    est_couverture,
+    est_technique,
     extraire_texte,
     journaliser,
 )
@@ -136,11 +138,25 @@ class ChefOrchestre(CustomLogger):
             # Contre-verification sur le texte PSEUDONYMISE : s'il reste un
             # motif sensible (mot-cle metier, entite vue par la loupe), la
             # pseudonymisation est incomplete -> refus. Fail-closed.
+            # La vigie scrute AUSSI le texte pseudo : un identifiant qui a
+            # survecu au greffier (CPF bresilien sans pack actif...) est un
+            # format INCONNU -> refus + alerte "demande de mise a jour".
             texte_pseudo, _ = extraire_texte(data)
             motifs_restants = await boucle.run_in_executor(None, detecter_sensibilite_complete, texte_pseudo)
+            inconnus = vigie.identifiants_inconnus(texte_pseudo)
+            if inconnus:
+                vigie.signaler(inconnus, len(texte_pseudo))
+                motifs_restants = motifs_restants + inconnus
             if motifs_restants:
                 greffier.detruire()
                 journaliser("refus-pseudo-incomplete", modele_demande, None, motifs_restants, len(texte))
+                if any(est_couverture(m) for m in motifs_restants):
+                    raise _refus(motifs_restants,
+                                 "Route pseudo refusee : ce document sort des cases connues du "
+                                 "routeur (identifiant ou origine non couverts). Renseignez le "
+                                 "pays d'origine, activez le pack correspondant (CHEF_PACKS_PAYS, "
+                                 "voir packs-pays/README.md) puis relancez. En attendant : route "
+                                 "locale. Manque trace dans alertes-couverture.jsonl.")
                 raise _refus(motifs_restants,
                              "Route pseudo refusee : il reste du sensible que le greffier ne sait pas "
                              "remplacer (noms, contexte metier). Utiliser la route locale.")
@@ -168,8 +184,15 @@ class ChefOrchestre(CustomLogger):
             if not cible_locale:
                 # FAIL-CLOSED : cible non locale + motif = refus net, message honnete.
                 journaliser("refus-fail-closed", modele_demande, None, motifs_sensibles, len(texte))
-                que_technique = all(m in CODES_TECHNIQUES for m in motifs_sensibles)
-                if que_technique:
+                if all(est_technique(m) for m in motifs_sensibles):
+                    if any(est_couverture(m) for m in motifs_sensibles):
+                        # La vigie : hors des cases connues -> demande de mise a jour.
+                        raise _refus(motifs_sensibles,
+                                     "Demande refusee : ce document sort des cases connues du "
+                                     "routeur (ecriture, langue ou pack manquant). Renseignez "
+                                     "l'origine du document et activez le pack pays correspondant "
+                                     "(CHEF_PACKS_PAYS, voir packs-pays/README.md). En attendant : "
+                                     "route locale. Manque trace dans alertes-couverture.jsonl.")
                     raise _refus(motifs_sensibles,
                                  "Demande refusee : contenu non verifiable par la serrure "
                                  "(detection indisponible ou bloc non textuel), "

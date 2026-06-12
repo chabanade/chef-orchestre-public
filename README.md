@@ -46,7 +46,9 @@ local. Deux raisons juridiques, verifiees sur sources primaires :
 | `detection.py` | Le cerveau de la serrure : extraction du texte, sensibilite, complexite (Python pur, zero dependance) |
 | `detection_fine.py` | La loupe optionnelle : detection fine PII (GLiNER ou Presidio), fenetres glissantes |
 | `chef_orchestre_hook.py` | La plomberie LiteLLM : fail-closed, default-deny, journal |
-| `test_detection.py` | 78 tests unitaires (stdlib uniquement) : `python test_detection.py` |
+| `test_detection.py` | 98 tests unitaires (stdlib uniquement) : `python test_detection.py` |
+| `vigie.py` | La vigie : diagnostique ce qui SORT des cases connues (ecriture, langue, identifiant inconnu) et demande la mise a jour |
+| `packs-pays/` | L'amelioration continue sous GO humain : packs de detection par pays, auto-testes a l'activation |
 | `requirements-fine.txt` | Dependances optionnelles de la loupe (versions epinglees) |
 | `demo.py` | La demonstration en 4 actes (voir ci-dessous) |
 | `install/install.sh` / `install.ps1` | Installation machine cible (Linux GPU ou Windows) |
@@ -248,6 +250,33 @@ structurellement rien — c'est le role de la loupe (GLiNER est multilingue :
 en/fr/de/es/it/pt, il detecte par le SENS) et du 2e rideau. Sur la machine
 finale, la loupe n'est pas une option de confort : c'est la couche qui couvre
 l'etranger.
+
+### La vigie et les packs pays : le routeur sait dire "je ne sais pas"
+
+Un systeme de protection qui se CROIT couvert en silence est un danger. La
+vigie (`vigie.py`) diagnostique ce qui sort des cases connues et DEMANDE sa
+mise a jour :
+
+1. **L'alerte.** Ecriture non couverte (cyrillique, arabe, chinois... —
+   detection certaine par plages Unicode), langue latine non identifiee
+   (heuristique mots-outils, imparfaite et assumee), ou identifiant inconnu
+   (une sequence type identifiant national qui a survecu au greffier sur la
+   route pseudo). La demande reste en LOCAL, le refus explique quoi faire,
+   le manque est trace dans `alertes-couverture.jsonl` (metadonnees
+   seulement, jamais le contenu).
+2. **L'origine.** L'utilisateur identifie le pays du document.
+3. **Le GO.** Il active le pack : `CHEF_PACKS_PAYS=bresil` puis redemarrage.
+   Chaque motif du pack est AUTO-TESTE au chargement (la regex doit
+   reconnaitre son propre exemple) ; un pack casse est refuse EN ENTIER et
+   tout reste en local tant qu'il n'est pas repare.
+4. **La reprise.** Le CPF devient `<CPF_BR_1>`, le dossier continue.
+
+Packs livres (formats verifies sur Microsoft Purview, 12/06/2026) : bresil
+(CPF, CNPJ), inde (PAN, Aadhaar), chine (carte d'identite 18 caracteres).
+Doctrine : la machine DIAGNOSTIQUE et DEMANDE, l'humain DECIDE et ACTIVE —
+un outil de securite ne reecrit jamais ses propres regles tout seul, et un
+pack ne peut qu'AJOUTER des detections, jamais en retirer (surface sure par
+construction). Mode d'emploi complet : `packs-pays/README.md`.
 
 ## Durcissements issus de la revue adversariale (juin 2026)
 

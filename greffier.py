@@ -34,7 +34,7 @@ import re
 import threading
 import time
 
-from detection import MOTIFS_CONTEXTUELS, MOTIFS_REGEX, contexte_present
+from detection import CLASSES_PACKS, MOTIFS_CONTEXTUELS, MOTIFS_REGEX, contexte_present
 
 # Les classes que le greffier sait remplacer : des VALEURS formatees,
 # detectables avec leurs positions exactes. (Les mots-cles contextuels,
@@ -48,6 +48,7 @@ CLASSES_PSEUDONYMISABLES = [
     "email", "tva_fr", "tva_ue", "iban",
     "numero_securite_sociale", "ssn_us", "avs_suisse", "codice_fiscale_it",
     "siret", "carte_bancaire",
+] + CLASSES_PACKS + [          # packs pays actives (CHEF_PACKS_PAYS)
     "telephone_international", "telephone_fr",
 ]
 

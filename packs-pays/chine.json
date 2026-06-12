@@ -1,0 +1,12 @@
+{
+    "pays": "Chine",
+    "source": "Microsoft Purview sit-defn-china-resident-identity-card-number (consulte le 2026-06-12) : 18 caracteres, date de naissance YYYYMMDD integree, cle finale chiffre ou X",
+    "motifs": {
+        "carte_identite_chine": {
+            "regex": "\\b\\d{6}(?:19|20)\\d{2}(?:0[1-9]|1[0-2])(?:[0-2]\\d|3[01])\\d{3}[\\dXx]\\b",
+            "exemple": "11010519491231002X"
+        }
+    },
+    "motifs_contextuels": {},
+    "mots_cles": ["resident identity card", "shenfenzheng"]
+}

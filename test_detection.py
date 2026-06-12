@@ -546,6 +546,210 @@ class TestArmoireSession(unittest.TestCase):
         self.assertEqual({}, g.table)
 
 
+class TestVigie(unittest.TestCase):
+    """La vigie : diagnostiquer ce qui sort des cases connues, alerter,
+    demander la mise a jour (12/06 soir). Donnees FICTIVES."""
+
+    def test_cyrillique_detecte(self):
+        import vigie
+        codes = vigie.detecter_couverture("Договор аренды между сторонами подписан")
+        self.assertIn("ecriture-non-couverte:cyrillique", codes)
+
+    def test_chinois_detecte(self):
+        import vigie
+        codes = vigie.detecter_couverture("本合同由双方签署，自签署之日起生效。")
+        self.assertIn("ecriture-non-couverte:cjk", codes)
+
+    def test_arabe_detecte(self):
+        import vigie
+        codes = vigie.detecter_couverture("تم توقيع هذا العقد بين الطرفين بتاريخ اليوم")
+        self.assertIn("ecriture-non-couverte:arabe", codes)
+
+    def test_nom_isole_sous_le_seuil_pas_signale(self):
+        import vigie
+        # un nom seul (< 12 caracteres cyrilliques) ne declenche pas l'alerte
+        self.assertEqual([], vigie.detecter_couverture("Le client Дмитрий arrive lundi."))
+
+    def test_francais_pas_signale(self):
+        import vigie
+        texte = ("Le present contrat est conclu entre les parties pour une duree "
+                 "de douze mois renouvelable. Les conditions sont fixees dans les "
+                 "annexes jointes et chaque partie conserve une copie signee.")
+        self.assertEqual([], vigie.detecter_couverture(texte))
+
+    def test_langue_latine_inconnue_signalee(self):
+        import vigie
+        # polonais (hors des 6 langues de la loupe) : assez long pour juger
+        texte = ("Niniejsza umowa zostala zawarta pomiedzy stronami w dniu "
+                 "dzisiejszym. Kazda ze stron otrzymuje jeden egzemplarz umowy. "
+                 "Wszelkie zmiany wymagaja formy pisemnej pod rygorem niewaznosci "
+                 "zgodnie z przepisami prawa cywilnego obowiazujacego w kraju.")
+        self.assertIn("langue-non-identifiee", vigie.langue_couverte(texte))
+
+    def test_donnees_structurees_pas_jugees(self):
+        import vigie
+        # un bloc essentiellement non alphabetique (tableau de chiffres) : la
+        # vigie ne juge pas la langue
+        texte = "12; 45; 78; 91; 23; 56; 89; 12; 34; 67; 90; 11; 22; 33; 44; 55"
+        self.assertEqual([], vigie.langue_couverte(texte))
+
+    def test_identifiant_inconnu_detecte(self):
+        import vigie
+        # un CPF bresilien sans pack actif = format inconnu qui a survecu
+        self.assertEqual(["identifiant-inconnu"],
+                         vigie.identifiants_inconnus("contrat du client 123.456.789-09"))
+
+    def test_date_pas_un_identifiant(self):
+        import vigie
+        self.assertEqual([], vigie.identifiants_inconnus("reunion le 12/06/2026 et le 2026-06-15"))
+
+    def test_montant_pas_un_identifiant(self):
+        import vigie
+        self.assertEqual([], vigie.identifiants_inconnus("budget total 1.234.567.890 euros"))
+
+    def test_carnet_d_alertes_ecrit(self):
+        import os
+        import tempfile
+
+        import vigie
+        ancien = vigie.ALERTES
+        try:
+            vigie.ALERTES = os.path.join(tempfile.gettempdir(), "test-alertes-chef.jsonl")
+            if os.path.exists(vigie.ALERTES):
+                os.remove(vigie.ALERTES)
+            vigie.signaler(["ecriture-non-couverte:cyrillique"], 240)
+            with open(vigie.ALERTES, encoding="utf-8") as fichier:
+                contenu = fichier.read()
+            self.assertIn("ecriture-non-couverte:cyrillique", contenu)
+            self.assertNotIn("Договор", contenu)  # JAMAIS le contenu du document
+            os.remove(vigie.ALERTES)
+        finally:
+            vigie.ALERTES = ancien
+
+    def test_routage_integre_la_vigie(self):
+        # detecter_sensibilite_complete doit remonter les codes vigie
+        # (fail-closed : un document russe vise le cloud -> refus).
+        import vigie
+        ancien = vigie.ALERTES
+        try:
+            import os
+            import tempfile
+            vigie.ALERTES = os.path.join(tempfile.gettempdir(), "test-alertes-chef2.jsonl")
+            codes = detecter_sensibilite_complete("Договор аренды между сторонами подписан")
+            self.assertIn("ecriture-non-couverte:cyrillique", codes)
+        finally:
+            vigie.ALERTES = ancien
+
+
+class TestPacksPays(unittest.TestCase):
+    """Les packs pays : l'amelioration continue sous GO humain. Chaque pack
+    est auto-teste a l'activation ; un pack casse est refuse en entier."""
+
+    def setUp(self):
+        import detection
+        self._motifs = dict(detection.MOTIFS_REGEX)
+        self._contextuels = dict(detection.MOTIFS_CONTEXTUELS)
+        self._mots = list(detection.MOTS_CLES_SENSIBLES)
+        self._entiers = set(detection._MOTS_ENTIERS)
+        self._classes = list(detection.CLASSES_PACKS)
+
+    def tearDown(self):
+        import detection
+        detection.MOTIFS_REGEX.clear()
+        detection.MOTIFS_REGEX.update(self._motifs)
+        detection.MOTIFS_CONTEXTUELS.clear()
+        detection.MOTIFS_CONTEXTUELS.update(self._contextuels)
+        detection.MOTS_CLES_SENSIBLES[:] = self._mots
+        detection._MOTS_ENTIERS.clear()
+        detection._MOTS_ENTIERS.update(self._entiers)
+        detection.CLASSES_PACKS[:] = self._classes
+
+    def _pack(self, nom):
+        import json
+        import os
+        chemin = os.path.join(os.path.dirname(__file__), "packs-pays", nom + ".json")
+        with open(chemin, encoding="utf-8") as fichier:
+            return json.load(fichier)
+
+    def test_pack_bresil_active_le_cpf(self):
+        import detection
+        detection.charger_pack(self._pack("bresil"), "bresil")
+        codes = detecter_sensibilite("Contrat du client, CPF 123.456.789-09.")
+        self.assertIn("cpf_br", codes)
+        self.assertIn("cnpj_br", detecter_sensibilite("societe 12.345.678/0001-95"))
+
+    def test_pack_chine_carte_identite(self):
+        import detection
+        detection.charger_pack(self._pack("chine"), "chine")
+        self.assertIn("carte_identite_chine", detecter_sensibilite("client : 11010519491231002X"))
+
+    def test_pack_inde_pan_contextuel(self):
+        import detection
+        detection.charger_pack(self._pack("inde"), "inde")
+        self.assertIn("pan_inde", detecter_sensibilite("PAN du client : ABCPE1234F"))
+        # sans le mot de contexte, le motif ne decide pas seul
+        self.assertNotIn("pan_inde", detecter_sensibilite("reference ABCPE1234F"))
+
+    def test_sans_pack_le_cpf_n_est_pas_connu(self):
+        self.assertNotIn("cpf_br", detecter_sensibilite("client 123.456.789-09"))
+
+    def test_pack_casse_refuse_en_entier(self):
+        import detection
+        pack = {"motifs": {"casse": {"regex": "\\d{4}", "exemple": "abc"}}}  # exemple ne matche pas
+        with self.assertRaises(ValueError):
+            detection.charger_pack(pack, "casse")
+        self.assertNotIn("casse", detection.MOTIFS_REGEX)  # rien n'a ete ajoute
+
+    def test_pack_inconnu_signale_en_panne(self):
+        import detection
+        anciens = (list(detection.PACKS_DEMANDES), list(detection.PACKS_STATUT),
+                   list(detection.PACKS_CHARGES))
+        try:
+            detection.PACKS_DEMANDES[:] = ["atlantide"]
+            detection.PACKS_STATUT[:] = []
+            detection._charger_packs_demandes()
+            self.assertIn("pack-en-panne:atlantide", detection.PACKS_STATUT)
+            # fail-closed : le code remonte dans toute detection
+            self.assertIn("pack-en-panne:atlantide",
+                          detecter_sensibilite_complete("bonjour"))
+        finally:
+            (detection.PACKS_DEMANDES[:], detection.PACKS_STATUT[:],
+             detection.PACKS_CHARGES[:]) = anciens
+
+    def test_greffier_jetonne_le_cpf_apres_activation(self):
+        import detection
+        detection.charger_pack(self._pack("bresil"), "bresil")
+        import vigie
+        from greffier import Greffier
+        g = Greffier()
+        # le greffier lit CLASSES_PACKS au moment du remplacement ? Non : sa
+        # liste est figee a l'import. On verifie ici le contrat reel : les
+        # motifs DIRECTS du pack sont dans MOTIFS_REGEX et le greffier les
+        # remplace via sa liste reconstruite.
+        import greffier as module_greffier
+        anciennes = list(module_greffier.CLASSES_PSEUDONYMISABLES)
+        try:
+            module_greffier.CLASSES_PSEUDONYMISABLES = (
+                anciennes[:-2] + [c for c in detection.CLASSES_PACKS if c not in anciennes]
+                + anciennes[-2:])
+            pseudo = g.pseudonymiser_texte("Paiement du client CPF 123.456.789-09 valide.")
+            self.assertNotIn("123.456.789-09", pseudo)
+            self.assertIn("<CPF_BR_1>", pseudo)
+            # et la vigie ne voit plus rien d'inconnu sur le texte pseudonymise
+            self.assertEqual([], vigie.identifiants_inconnus(pseudo))
+        finally:
+            module_greffier.CLASSES_PSEUDONYMISABLES = anciennes
+
+    def test_codes_couverture_reconnus(self):
+        from detection import est_couverture, est_technique
+        for code in ("ecriture-non-couverte:cyrillique", "langue-non-identifiee",
+                     "identifiant-inconnu", "pack-en-panne:bresil"):
+            self.assertTrue(est_couverture(code), code)
+            self.assertTrue(est_technique(code), code)
+        self.assertFalse(est_couverture("iban"))
+        self.assertFalse(est_technique("mot-cle:patient"))
+
+
 class TestRobustesse(unittest.TestCase):
     def test_seuil_env_malforme_ne_crashe_pas(self):
         import os

@@ -1,0 +1,22 @@
+{
+    "pays": "Bresil",
+    "source": "Microsoft Purview sit-defn-brazil-cpf-number (consulte le 2026-06-12) ; CNPJ : format officiel Receita Federal (notoire)",
+    "motifs": {
+        "cpf_br": {
+            "regex": "\\b\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}\\b",
+            "exemple": "123.456.789-09"
+        },
+        "cnpj_br": {
+            "regex": "\\b\\d{2}\\.\\d{3}\\.\\d{3}/\\d{4}-\\d{2}\\b",
+            "exemple": "12.345.678/0001-95"
+        }
+    },
+    "motifs_contextuels": {
+        "cpf_br_brut": {
+            "regex": "\\b\\d{11}\\b",
+            "contextes": ["cpf", "cadastro de pessoas"],
+            "exemple": "12345678909"
+        }
+    },
+    "mots_cles": ["cpf", "cnpj", "cadastro de pessoas fisicas"]
+}

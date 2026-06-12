@@ -1,0 +1,18 @@
+{
+    "pays": "Inde",
+    "source": "Microsoft Purview sit-defn-india-permanent-account-number (consulte le 2026-06-12) ; Aadhaar : 12 chiffres, format UIDAI",
+    "motifs": {},
+    "motifs_contextuels": {
+        "pan_inde": {
+            "regex": "\\b[A-Za-z]{3}[CPHFATBLJGcphfatbljg][A-Za-z]\\d{4}[A-Za-z]\\b",
+            "contextes": ["pan", "permanent account"],
+            "exemple": "ABCPE1234F"
+        },
+        "aadhaar_inde": {
+            "regex": "\\b\\d{4}\\s?\\d{4}\\s?\\d{4}\\b",
+            "contextes": ["aadhaar"],
+            "exemple": "2345 6789 0123"
+        }
+    },
+    "mots_cles": ["aadhaar", "permanent account number"]
+}

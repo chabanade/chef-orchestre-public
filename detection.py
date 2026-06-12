@@ -12,6 +12,8 @@ import os
 import re
 import time
 
+import vigie
+
 
 def _env_int(nom, defaut):
     """Lit un entier dans l'environnement ; valeur malformee -> defaut (jamais de crash)."""
@@ -37,7 +39,24 @@ CODES_TECHNIQUES = {
     "loupe-en-panne",
     "detection-en-panne",
     "contenu-non-inspectable",
+    "langue-non-identifiee",
+    "identifiant-inconnu",
 }
+
+# Codes "couverture" (la vigie) : le document sort des cases connues du
+# routeur -> prudence + ALERTE "demande de mise a jour" (packs-pays/).
+PREFIXES_COUVERTURE = ("ecriture-non-couverte:", "pack-en-panne:",
+                       "langue-non-identifiee", "identifiant-inconnu")
+
+
+def est_technique(code):
+    """Prudence sans donnee VUE : codes techniques et codes couverture."""
+    return code in CODES_TECHNIQUES or code.startswith(("ecriture-non-couverte:", "pack-en-panne:"))
+
+
+def est_couverture(code):
+    """Ce code signifie-t-il "hors des cases connues" (mise a jour a demander) ?"""
+    return code.startswith(PREFIXES_COUVERTURE)
 
 # ------------------------------------------------------------------
 # Detection de SENSIBILITE (v1 : regles lisibles et auditables)
@@ -163,6 +182,64 @@ def contexte_present(contextes, texte_minuscule):
 
 
 # ------------------------------------------------------------------
+# PACKS PAYS (12/06 soir) : l'amelioration continue, sous GO humain.
+# Un pack (packs-pays/<nom>.json) AJOUTE des motifs, des contextuels et
+# des mots-cles pour un pays : il ne peut jamais RETIRER une detection
+# (surface sure par construction). Activation : CHEF_PACKS_PAYS=bresil,inde
+# dans .env — c'est le geste de l'utilisateur, jamais celui de la machine.
+# Auto-test au chargement : chaque regex doit compiler ET reconnaitre son
+# propre exemple, sinon le pack ENTIER est refuse et signale ; un pack
+# demande mais en panne = promesse de couverture non tenue = TOUT reste
+# en local tant que ce n'est pas repare (fail-closed).
+# ------------------------------------------------------------------
+PACKS_DEMANDES = [p.strip() for p in os.environ.get("CHEF_PACKS_PAYS", "").split(",") if p.strip()]
+CLASSES_PACKS = []   # codes directs des packs, jetonnables par le greffier
+PACKS_STATUT = []    # ["pack-en-panne:<nom>"] si un pack demande a echoue
+PACKS_CHARGES = []   # noms des packs actifs (pour le journal)
+
+
+def charger_pack(donnees, nom):
+    """Valide PUIS enrichit (atomique : un pack invalide n'ajoute rien).
+    Leve ValueError si le pack est invalide."""
+    valides_directs, valides_contextuels = {}, {}
+    for code, motif in (donnees.get("motifs") or {}).items():
+        regex = re.compile(motif["regex"], re.IGNORECASE if motif.get("ignorecase") else 0)
+        if not regex.search(motif["exemple"]):
+            raise ValueError("motif %s : l'exemple ne matche pas sa propre regex" % code)
+        valides_directs[code] = regex
+    for code, motif in (donnees.get("motifs_contextuels") or {}).items():
+        regex = re.compile(motif["regex"], re.IGNORECASE if motif.get("ignorecase") else 0)
+        if not regex.search(motif["exemple"]):
+            raise ValueError("motif contextuel %s : l'exemple ne matche pas" % code)
+        if not motif.get("contextes"):
+            raise ValueError("motif contextuel %s : aucun mot de contexte" % code)
+        valides_contextuels[code] = (regex, list(motif["contextes"]))
+    # Tout est valide : on enrichit (ajout seulement, jamais de retrait).
+    MOTIFS_REGEX.update(valides_directs)
+    CLASSES_PACKS.extend(valides_directs)
+    MOTIFS_CONTEXTUELS.update(valides_contextuels)
+    for mot in donnees.get("mots_cles") or []:
+        MOTS_CLES_SENSIBLES.append(mot)
+        if len(mot) <= 4:  # mots courts : detection en mot entier
+            _MOTS_ENTIERS.add(mot)
+    PACKS_CHARGES.append(nom)
+
+
+def _charger_packs_demandes():
+    dossier = os.path.join(os.path.dirname(__file__), "packs-pays")
+    for nom in PACKS_DEMANDES:
+        try:
+            chemin = os.path.join(dossier, nom + ".json")
+            with open(chemin, "r", encoding="utf-8") as fichier:
+                charger_pack(json.load(fichier), nom)
+        except Exception:  # introuvable, JSON casse, regex invalide, exemple rate
+            PACKS_STATUT.append("pack-en-panne:" + nom)
+
+
+_charger_packs_demandes()
+
+
+# ------------------------------------------------------------------
 # Extraction du texte d'une demande (tous formats connus de LiteLLM)
 # Pur Python : testable sans LiteLLM.
 # ------------------------------------------------------------------
@@ -240,19 +317,25 @@ def detecter_sensibilite(texte):
 
 
 _statut_loupe_journalise = False
+_statut_packs_journalise = False
 
 
 def detecter_sensibilite_complete(texte):
-    """Serrure v1 (regles) + loupe (detection fine PII) si elle est disponible.
+    """Serrure v1 (regles) + loupe (detection fine PII) si elle est disponible
+    + la VIGIE (hors cases connues) + le statut des packs pays.
 
     La loupe COMPLETE les regles, elle ne les remplace pas (union des codes).
     Doctrine des pannes, sans ambiguite :
       - loupe ABSENTE (pas installee, ou CHEF_DETECTION_FINE=off) : choix
         d'exploitation assume -> regles seules, statut journalise une fois ;
       - loupe EN PANNE (chargee mais qui crashe, ou module casse) : anomalie
-        -> code technique "loupe-en-panne" -> la demande reste en local.
+        -> code technique "loupe-en-panne" -> la demande reste en local ;
+      - VIGIE : ecriture/langue hors couverture -> prudence + carnet
+        d'alertes (demande de mise a jour, voir packs-pays/) ;
+      - pack demande mais en panne -> promesse de couverture non tenue ->
+        code permanent, tout reste en local tant que ce n'est pas repare.
     """
-    global _statut_loupe_journalise
+    global _statut_loupe_journalise, _statut_packs_journalise
     codes = detecter_sensibilite(texte)
     try:
         from detection_fine import detecter_sensibilite_fine, statut
@@ -264,6 +347,15 @@ def detecter_sensibilite_complete(texte):
         pass  # module fin absent du dossier : la serrure v1 suffit
     except Exception:  # module present mais casse : anomalie -> prudence
         codes += ["loupe-en-panne"]
+    if PACKS_DEMANDES and not _statut_packs_journalise:
+        _statut_packs_journalise = True
+        journaliser("packs-statut", None, None,
+                    ["actifs:" + ",".join(PACKS_CHARGES or ["aucun"])] + PACKS_STATUT, 0)
+    codes_vigie = vigie.detecter_couverture(texte)
+    if codes_vigie:
+        vigie.signaler(codes_vigie, len(texte))
+        codes += codes_vigie
+    codes += PACKS_STATUT
     return codes
 
 

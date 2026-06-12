@@ -48,7 +48,9 @@ doubt: local. Two legal reasons, checked against primary sources:
 | `detection.py` | The brain of the lock: text extraction, sensitivity, complexity (pure Python, zero dependency) |
 | `detection_fine.py` | The optional magnifier: fine-grained PII detection (GLiNER or Presidio), sliding windows |
 | `chef_orchestre_hook.py` | The LiteLLM plumbing: fail-closed, default-deny, logging |
-| `test_detection.py` | 78 unit tests (stdlib only): `python test_detection.py` |
+| `test_detection.py` | 98 unit tests (stdlib only): `python test_detection.py` |
+| `vigie.py` | The lookout: diagnoses what falls OUTSIDE the known cases (script, language, unknown identifier) and requests an update |
+| `packs-pays/` | Continuous improvement under human GO: per-country detection packs, self-tested on activation |
 | `requirements-fine.txt` | Optional magnifier dependencies (pinned versions) |
 | `demo.py` | The demonstration (see below) |
 | `install/install.sh` / `install.ps1` | Target-machine installation (Linux GPU or Windows) |
@@ -257,6 +259,33 @@ nothing — that is the job of the magnifier (GLiNER is multilingual:
 en/fr/de/es/it/pt, it detects by MEANING) and of the second curtain. On the
 final machine, the magnifier is not a comfort option: it is the layer that
 covers the foreign cases.
+
+### The lookout and the country packs: the router knows how to say "I don't know"
+
+A protection system that silently BELIEVES it is covered is a danger. The
+lookout (`vigie.py`) diagnoses what falls outside the known cases and
+REQUESTS its own update:
+
+1. **The alert.** Uncovered script (Cyrillic, Arabic, Chinese... — certain
+   detection via Unicode ranges), unidentified Latin language (stop-word
+   heuristic, imperfect and documented as such), or unknown identifier (a
+   national-identifier-looking sequence that survived the clerk on the
+   pseudo route). The request stays LOCAL, the refusal explains what to do,
+   the gap is logged in `alertes-couverture.jsonl` (metadata only, never
+   the content).
+2. **The origin.** The user identifies the document's country.
+3. **The GO.** They activate the pack: `CHEF_PACKS_PAYS=bresil` then
+   restart. Every pattern in a pack is SELF-TESTED at load time (the regex
+   must recognize its own example); a broken pack is refused AS A WHOLE and
+   everything stays local until it is fixed.
+4. **Resuming.** The CPF becomes `<CPF_BR_1>`, the case file moves on.
+
+Shipped packs (formats verified against Microsoft Purview, 12 June 2026):
+Brazil (CPF, CNPJ), India (PAN, Aadhaar), China (18-character resident ID).
+Doctrine: the machine DIAGNOSES and REQUESTS, the human DECIDES and
+ACTIVATES — a security tool never rewrites its own rules by itself, and a
+pack can only ADD detections, never remove any (a safe surface by
+construction). Full how-to: `packs-pays/README.md`.
 
 ## Hardening from the adversarial review (June 2026)
 
