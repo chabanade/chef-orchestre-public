@@ -45,6 +45,24 @@ litellm_settings:
   callbacks: chef_orchestre_hook.proxy_handler_instance
   drop_params: true
 
+# ------------------------------------------------------------------
+# 2e RIDEAU (jour J) : le guardrail Presidio natif de LiteLLM, en serie
+# derriere notre serrure. Deux codes ecrits par des gens differents n'ont
+# pas les memes angles morts. Tout reste LOCAL : 2 conteneurs Docker sur
+# la machine (voir rideau-presidio/, regles francaises injectees).
+# A decommenter APRES avoir lance rideau-presidio/ et rempli les
+# variables PRESIDIO_*_API_BASE dans .env. Perimetre (tout le trafic ou
+# seulement les routes cloud) : a trancher par un test reel au branchement.
+# ------------------------------------------------------------------
+# guardrails:
+#   - guardrail_name: rideau-presidio
+#     litellm_params:
+#       guardrail: presidio
+#       mode: pre_call
+#       output_parse_pii: true     # l'aller-retour natif : sa propre armoire
+#       presidio_language: fr
+#       presidio_ad_hoc_recognizers: ./rideau-presidio/recognizers-fr.json
+
 general_settings:
   # Cle d'acces au routeur lui-meme (a definir dans .env, jamais ici)
   master_key: os.environ/LITELLM_MASTER_KEY

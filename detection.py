@@ -46,7 +46,9 @@ CODES_TECHNIQUES = {
 # ------------------------------------------------------------------
 MOTIFS_REGEX = {
     "email": re.compile(r"[\w.+-]+@[\w-]+\.[\w.]{2,}"),
-    "telephone_fr": re.compile(r"(?:\+33\s?|0)[1-9](?:[\s.-]?\d{2}){4}\b"),
+    # (?<!\d) : un vrai numero n'est jamais colle derriere un chiffre ; sans
+    # ce garde, la regex matchait AU MILIEU d'un numero de TVA (FR40123456824).
+    "telephone_fr": re.compile(r"(?<!\d)(?:\+33\s?|0)[1-9](?:[\s.-]?\d{2}){4}\b"),
     # IGNORECASE : un IBAN tape en minuscules reste un IBAN (trou trouve en revue)
     "iban": re.compile(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){4,7}(?:[ ]?[A-Z0-9]{1,3})?\b", re.IGNORECASE),
     "numero_securite_sociale": re.compile(r"\b[12]\s?\d{2}\s?(?:0[1-9]|1[0-2]|62|63)\s?(?:\d{2}|2A|2B)\s?\d{3}\s?\d{3}(?:\s?\d{2})?\b"),
@@ -54,6 +56,33 @@ MOTIFS_REGEX = {
     # Volontairement large (toute suite 4x4 chiffres) : un faux positif coute
     # quelques secondes de local, un faux negatif coute une fuite.
     "carte_bancaire": re.compile(r"\b\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4}\b"),
+    # TVA intracommunautaire FR (FR + cle 2 caracteres + SIREN 9 chiffres).
+    # Identifie l'entreprise, comme le SIRET : meme traitement. Pas de
+    # collision avec l'IBAN FR : ici les 11 caracteres apres FR sont colles,
+    # et un IBAN compact a un chiffre derriere qui fait echouer le \b final.
+    "tva_fr": re.compile(r"\bFR[A-Z0-9]{2}\d{9}\b", re.IGNORECASE),
+}
+
+# Motifs CONTEXTUELS (idee reprise de PII-Shield, MIT) : un motif trop
+# generique pour decider seul (12 chiffres = peut-etre une CNI, peut-etre un
+# numero de commande) ne compte que si un mot de contexte l'accompagne dans
+# le meme texte. Les deux signaux ensemble = sensible ; le mot seul est deja
+# couvert par MOTS_CLES_SENSIBLES (le routage reste prudent de toute facon).
+# Formats VERIFIES (Purview/service-public, 12/06/2026) :
+#   - CNI (ancien format) : 12 chiffres ;
+#   - passeport francais : 2 chiffres + 2 lettres + 5 chiffres (PII-Shield
+#     ne couvre que des formats generiques UE, le notre est le bon) ;
+#     les variantes UE de PII-Shield sont gardees en complement.
+MOTIFS_CONTEXTUELS = {
+    "cni_fr": (
+        re.compile(r"\b\d{12}\b"),
+        ["carte nationale", "carte d'identite", "carte d'identité",
+         "piece d'identite", "pièce d'identité", "cni"],
+    ),
+    "passeport_fr": (
+        re.compile(r"\b(?:\d{2}[A-Za-z]{2}\d{5}|[A-Za-z]{2}\d{7}|\d{9})\b"),
+        ["passeport", "passport"],
+    ),
 }
 
 # Vocabulaire du secret professionnel (avocat, sante, comptable).
@@ -66,6 +95,7 @@ MOTS_CLES_SENSIBLES = [
     "coordonnees bancaires", "coordonnées bancaires", "succession",
     "divorce", "plainte", "garde a vue", "garde à vue", "piece d'identite",
     "pièce d'identité", "passeport", "carte vitale", "adresse personnelle",
+    "carte d'identite", "carte d'identité", "carte nationale", "cni",
 ]
 
 MOTS_CLES_LOURDS = [
@@ -77,13 +107,18 @@ MOTS_CLES_LOURDS = [
 
 # Mots courts ou ambigus : detectes en mot entier pour eviter les faux
 # positifs dans un mot plus long (ex. "rib" dans "courrier ou ruban").
-_MOTS_ENTIERS = {"rib", "iban", "bic", "patient", "salaire", "passeport", "succession", "divorce", "plainte", "confidentiel"}
+_MOTS_ENTIERS = {"rib", "iban", "bic", "patient", "salaire", "passeport", "succession", "divorce", "plainte", "confidentiel", "cni"}
 
 
 def _present(mot, texte_minuscule):
     if mot in _MOTS_ENTIERS:
         return re.search(r"\b" + re.escape(mot) + r"\b", texte_minuscule) is not None
     return mot in texte_minuscule
+
+
+def contexte_present(contextes, texte_minuscule):
+    """Un des mots de contexte est-il present ? (partage avec le greffier)."""
+    return any(_present(mot, texte_minuscule) for mot in contextes)
 
 
 # ------------------------------------------------------------------
@@ -155,6 +190,11 @@ def detecter_sensibilite(texte):
     codes = [code for code, regex in MOTIFS_REGEX.items() if regex.search(texte)]
     texte_minuscule = texte.lower()
     codes += ["mot-cle:" + mot for mot in MOTS_CLES_SENSIBLES if _present(mot, texte_minuscule)]
+    # Motifs contextuels : la valeur generique ET son mot de contexte.
+    codes += [
+        code for code, (regex, contextes) in MOTIFS_CONTEXTUELS.items()
+        if regex.search(texte) and contexte_present(contextes, texte_minuscule)
+    ]
     return codes
 
 

@@ -48,12 +48,13 @@ doubt: local. Two legal reasons, checked against primary sources:
 | `detection.py` | The brain of the lock: text extraction, sensitivity, complexity (pure Python, zero dependency) |
 | `detection_fine.py` | The optional magnifier: fine-grained PII detection (GLiNER or Presidio), sliding windows |
 | `chef_orchestre_hook.py` | The LiteLLM plumbing: fail-closed, default-deny, logging |
-| `test_detection.py` | 50 unit tests (stdlib only): `python test_detection.py` |
+| `test_detection.py` | 62 unit tests (stdlib only): `python test_detection.py` |
 | `requirements-fine.txt` | Optional magnifier dependencies (pinned versions) |
 | `demo.py` | The demonstration (see below) |
 | `install/install.sh` / `install.ps1` | Target-machine installation (Linux GPU or Windows) |
 | `start.sh` / `start.ps1` | Router startup (Ollama + LiteLLM) |
 | `.env.example` | The variables to fill in (keys NEVER go through git) |
+| `rideau-presidio/` | The optional second curtain: LiteLLM's Presidio guardrail, local containers + injected French rules |
 
 Note: code comments and log labels are in French (the project was born in a
 French regulated-professions context: lawyers, healthcare, accountants). Every
@@ -200,6 +201,33 @@ Hardened after the study (main risk: tokens damaged by the model): automatic
 system instruction, tolerant matching on return (`<iban 1>`, `< IBAN_1 >`,
 `<Iban-1>` are recovered), and logged integrity check (an unrecoverable token
 is left opaque: zero leak, zero guessing).
+
+### The study's best ideas, adopted and verified at the source (12 June 2026)
+
+Every idea was checked against the ORIGINAL code before being adopted, and the
+detour was worth it. PII-Shield's real code is poorer than its README (NIR
+with no validation and less precise than ours, CNI = a bare `\d{12}`, a
+passport pattern that misses the actual French format): the real loot was its
+IDEA of **contextual patterns** — a pattern too generic to decide alone only
+counts when a context word accompanies it. Adopted and improved:
+
+- **French intra-community VAT number** (`FRxx` + SIREN): strong pattern,
+  case-insensitive — it was not detected at all before;
+- **French ID card** (12 digits + context word) and **French passport** in the
+  VERIFIED format (2 digits + 2 letters + 5 digits, source Purview /
+  service-public, plus the EU variants): detected by the lock AND tokenized by
+  the clerk as defense in depth (a false positive is harmless, the round trip
+  restores the value);
+- along the way, the looting tests exposed a real collision: the phone-number
+  regex was eating the MIDDLE of a VAT number; fixed with a `(?<!\d)` guard
+  and a specific-before-generic replacement order;
+- **the second curtain is ready** (`rideau-presidio/`): LiteLLM's native
+  Presidio guardrail (`output_parse_pii` = its own round trip) in series
+  behind the lock — two codebases written by different people don't share the
+  same blind spots. Two local Docker containers bound to 127.0.0.1, the
+  analyzer extended with French, and the router's French rules injected as ad
+  hoc recognizers. Ready to plug in (3 steps, see its README), to be tested on
+  the target machine.
 
 ## Hardening from the adversarial review (June 2026)
 

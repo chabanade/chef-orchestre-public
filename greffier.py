@@ -34,21 +34,24 @@ import re
 import threading
 import time
 
-from detection import MOTIFS_REGEX
+from detection import MOTIFS_CONTEXTUELS, MOTIFS_REGEX, contexte_present
 
 # Les classes que le greffier sait remplacer : des VALEURS formatees,
 # detectables avec leurs positions exactes. (Les mots-cles contextuels,
 # eux, ne sont pas des valeurs remplacables.)
+# Ordre = du plus SPECIFIQUE au plus generique : l'iban avant tva_fr (un
+# IBAN jetonne ne peut plus etre confondu avec une TVA), et le telephone en
+# DERNIER (sa regex, la plus floue, ne doit manger personne d'autre).
 CLASSES_PSEUDONYMISABLES = [
-    "email", "telephone_fr", "iban", "numero_securite_sociale",
-    "siret", "carte_bancaire",
+    "email", "iban", "tva_fr", "numero_securite_sociale",
+    "siret", "carte_bancaire", "telephone_fr",
 ]
 
 _JETON = re.compile(r"<[A-Z_]+_\d+>")
 
 
 # ------------------------------------------------------------------
-# L'armoire de SESSION (decision Mehdi du 12/06/2026) : pour pouvoir
+# L'armoire de SESSION (decision du 12/06/2026) : pour pouvoir
 # ITERER sur une meme conversation, la meme valeur doit garder le meme
 # jeton d'un tour a l'autre, et un jeton du tour 1 doit rester
 # restaurable au tour 5. Compromis assume et borne :
@@ -147,10 +150,23 @@ class Greffier:
         return self._jeton_pour(code, match.group(0))
 
     def pseudonymiser_texte(self, texte):
-        """Remplace toutes les valeurs formatees par des jetons."""
+        """Remplace toutes les valeurs formatees par des jetons.
+
+        Defense en profondeur (idee PII-Shield) : les valeurs CONTEXTUELLES
+        (CNI 12 chiffres, n° de passeport) sont jetonnees aussi, mais
+        seulement si leur mot de contexte est dans le MEME bloc de texte.
+        Un faux positif est inoffensif : le jeton fait l'aller-retour et la
+        vraie valeur est restauree au retour, le cloud n'a rien vu.
+        Contexte dans un autre bloc ? Le mot-cle sensible restant fera
+        refuser la route pseudo (fail-closed), rien ne sort en clair.
+        """
+        contexte_minuscule = texte.lower()
         for code in CLASSES_PSEUDONYMISABLES:
             regex = MOTIFS_REGEX[code]
             texte = regex.sub(lambda m, c=code: self._remplacer(c, m), texte)
+        for code, (regex, contextes) in MOTIFS_CONTEXTUELS.items():
+            if contexte_present(contextes, contexte_minuscule):
+                texte = regex.sub(lambda m, c=code: self._remplacer(c, m), texte)
         return texte
 
     def pseudonymiser_demande(self, data):

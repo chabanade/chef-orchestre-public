@@ -46,12 +46,13 @@ local. Deux raisons juridiques, verifiees sur sources primaires :
 | `detection.py` | Le cerveau de la serrure : extraction du texte, sensibilite, complexite (Python pur, zero dependance) |
 | `detection_fine.py` | La loupe optionnelle : detection fine PII (GLiNER ou Presidio), fenetres glissantes |
 | `chef_orchestre_hook.py` | La plomberie LiteLLM : fail-closed, default-deny, journal |
-| `test_detection.py` | 50 tests unitaires (stdlib uniquement) : `python test_detection.py` |
+| `test_detection.py` | 62 tests unitaires (stdlib uniquement) : `python test_detection.py` |
 | `requirements-fine.txt` | Dependances optionnelles de la loupe (versions epinglees) |
 | `demo.py` | La demonstration en 4 actes (voir ci-dessous) |
 | `install/install.sh` / `install.ps1` | Installation machine cible (Linux GPU ou Windows) |
 | `start.sh` / `start.ps1` | Lancement du routeur (Ollama + LiteLLM) |
 | `.env.example` | Les variables a remplir (les cles ne passent JAMAIS par git) |
+| `rideau-presidio/` | Le 2e rideau optionnel : guardrail Presidio de LiteLLM, conteneurs locaux + regles francaises injectees |
 
 ## La demo (`demo.py`)
 
@@ -191,6 +192,34 @@ Durci suite a l'etude (risque principal : jetons abimes par le modele) :
 consigne systeme automatique, matching tolerant au retour (`<iban 1>`,
 `< IBAN_1 >`, `<Iban-1>` rattrapes), et controle d'integrite journalise
 (jeton irrecuperable = laisse opaque : zero fuite, zero devinette).
+
+### Les meilleures idees de l'etude, reprises et verifiees a la source (12/06/2026)
+
+Chaque idee a ete verifiee dans le CODE original avant d'etre reprise, et le
+detour valait la peine. Le code reel de PII-Shield est plus pauvre que son
+README (NIR sans validation et moins precis que le notre, CNI = simple
+`\d{12}`, passeport qui ne couvre pas le format francais) : le vrai butin
+etait son IDEE des **motifs contextuels** — un pattern trop generique pour
+decider seul ne compte que si un mot de contexte l'accompagne. Repris et
+ameliores :
+
+- **TVA intracommunautaire FR** (`FRxx` + SIREN) : pattern fort, casse ignoree
+  — elle n'etait pas detectee du tout avant ;
+- **CNI** (12 chiffres + mot de contexte) et **passeport francais** au format
+  VERIFIE (2 chiffres + 2 lettres + 5 chiffres, source Purview/service-public,
+  plus les variantes UE) : detectes par la serrure ET jetonnes par le greffier
+  en defense en profondeur (un faux positif est inoffensif, l'aller-retour
+  restaure la valeur) ;
+- au passage, le test du pillage a revele une vraie collision : la regex
+  telephone mangeait le milieu d'un numero de TVA ; corrigee par un garde
+  `(?<!\d)` et l'ordre specifique-avant-generique des remplacements ;
+- **le 2e rideau est pret** (`rideau-presidio/`) : le guardrail Presidio natif
+  de LiteLLM (`output_parse_pii` = son propre aller-retour) en serie derriere
+  la serrure — deux codes ecrits par des gens differents n'ont pas les memes
+  angles morts. Deux conteneurs Docker locaux fermes sur 127.0.0.1, analyzer
+  enrichi du francais, et les regles francaises du routeur injectees en ad hoc
+  recognizers. Pret a brancher (3 gestes, voir son README), a tester sur la
+  machine cible.
 
 ## Durcissements issus de la revue adversariale (juin 2026)
 

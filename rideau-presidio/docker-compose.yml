@@ -1,0 +1,16 @@
+# Le 2e rideau : deux conteneurs Presidio, 100 % LOCAUX.
+# Ports fermes sur 127.0.0.1 : rien n'est expose au reseau.
+# Lancement (jour J) : docker compose up -d --build
+
+services:
+  presidio-analyzer:
+    build: ./analyzer-fr            # image officielle + modele francais
+    ports:
+      - "127.0.0.1:5002:3000"
+    restart: unless-stopped
+
+  presidio-anonymizer:
+    image: mcr.microsoft.com/presidio-anonymizer:latest
+    ports:
+      - "127.0.0.1:5001:3000"
+    restart: unless-stopped

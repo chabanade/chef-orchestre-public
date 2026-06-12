@@ -61,6 +61,47 @@ class TestSensibilite(unittest.TestCase):
         self.assertNotIn("mot-cle:patient", codes)
 
 
+class TestPillage(unittest.TestCase):
+    """Butin du 12/06 : TVA FR (pattern fort), CNI et passeport en motifs
+    CONTEXTUELS (idee PII-Shield : valeur generique + mot de contexte).
+    Donnees FICTIVES."""
+
+    def test_tva_fr_detectee(self):
+        self.assertIn("tva_fr", detecter_sensibilite("Notre numero de TVA est FR40123456824."))
+
+    def test_tva_fr_minuscule_detectee(self):
+        # Meme doctrine que l'IBAN (lecon de la revue) : la casse ne protege rien.
+        self.assertIn("tva_fr", detecter_sensibilite("tva : fr40123456824"))
+
+    def test_iban_compact_pas_pris_pour_une_tva(self):
+        codes = detecter_sensibilite("virement vers FR7630006000011234567890189")
+        self.assertIn("iban", codes)
+        self.assertNotIn("tva_fr", codes)
+
+    def test_cni_avec_contexte_detectee(self):
+        codes = detecter_sensibilite("Renouvellement de la carte d'identité n° 123456789012.")
+        self.assertIn("cni_fr", codes)
+
+    def test_cni_sans_contexte_ignoree(self):
+        # 12 chiffres seuls = peut-etre un numero de commande : pas de code
+        # cni_fr sans mot de contexte (l'idee meme du motif contextuel).
+        self.assertNotIn("cni_fr", detecter_sensibilite("Commande n° 123456789012 expediee."))
+
+    def test_passeport_francais_avec_contexte(self):
+        # Format FR verifie (2 chiffres + 2 lettres + 5 chiffres), que
+        # PII-Shield ne couvre meme pas.
+        codes = detecter_sensibilite("Mon passeport 12AB34567 expire en mai.")
+        self.assertIn("passeport_fr", codes)
+
+    def test_numero_seul_sans_le_mot_passeport_ignore(self):
+        self.assertNotIn("passeport_fr", detecter_sensibilite("reference produit 12AB34567"))
+
+    def test_mot_cle_cni_en_mot_entier(self):
+        self.assertIn("mot-cle:cni", detecter_sensibilite("ma CNI est expiree"))
+        # "picnic" contient c-n-i mais pas en mot entier
+        self.assertNotIn("mot-cle:cni", detecter_sensibilite("on organise un picnic"))
+
+
 class TestExtraction(unittest.TestCase):
     """extraire_texte doit tout lire, et lever le drapeau sur ce qu'il ne lit pas."""
 
@@ -315,6 +356,40 @@ class TestGreffier(unittest.TestCase):
         g.table["<EMAIL_1>"] = r"jean\g<0>$1@exemple.fr"  # valeur piegee artificielle
         restauree = g.repersonnaliser("voir <email 1> svp")
         self.assertIn(r"jean\g<0>$1@exemple.fr", restauree)
+
+    def test_tva_fr_aller_retour(self):
+        from greffier import Greffier
+        g = Greffier()
+        pseudo = g.pseudonymiser_texte("Verifie le numero de TVA FR40123456824 de ce fournisseur.")
+        self.assertNotIn("FR40123456824", pseudo)
+        self.assertIn("<TVA_FR_1>", pseudo)
+        self.assertIn("FR40123456824", g.repersonnaliser("Le numero <TVA_FR_1> est valide."))
+
+    def test_cni_contextuelle_jetonnee(self):
+        # Defense en profondeur : la VALEUR part en jeton quand le contexte
+        # est la (le mot-cle, lui, reste et continue de proteger la route).
+        from greffier import Greffier
+        g = Greffier()
+        pseudo = g.pseudonymiser_texte("Renouvellement de la carte d'identité n° 123456789012.")
+        self.assertNotIn("123456789012", pseudo)
+        self.assertIn("<CNI_FR_1>", pseudo)
+        self.assertNotIn("cni_fr", detecter_sensibilite(pseudo))  # la valeur a disparu
+
+    def test_douze_chiffres_sans_contexte_pas_touches(self):
+        # Sans contexte, 12 chiffres = peut-etre un numero de commande :
+        # on ne jetonne pas a l'aveugle.
+        from greffier import Greffier
+        g = Greffier()
+        texte = "Commande n° 123456789012 expediee."
+        self.assertEqual(texte, g.pseudonymiser_texte(texte))
+
+    def test_passeport_contextuel_aller_retour(self):
+        from greffier import Greffier
+        g = Greffier()
+        pseudo = g.pseudonymiser_texte("Numero de passeport : 12AB34567.")
+        self.assertNotIn("12AB34567", pseudo)
+        self.assertIn("<PASSEPORT_FR_1>", pseudo)
+        self.assertIn("12AB34567", g.repersonnaliser("Le passeport <PASSEPORT_FR_1> est en cours."))
 
 
 class TestArmoireSession(unittest.TestCase):
