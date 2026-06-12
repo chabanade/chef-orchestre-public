@@ -48,7 +48,7 @@ doubt: local. Two legal reasons, checked against primary sources:
 | `detection.py` | The brain of the lock: text extraction, sensitivity, complexity (pure Python, zero dependency) |
 | `detection_fine.py` | The optional magnifier: fine-grained PII detection (GLiNER or Presidio), sliding windows |
 | `chef_orchestre_hook.py` | The LiteLLM plumbing: fail-closed, default-deny, logging |
-| `test_detection.py` | 62 unit tests (stdlib only): `python test_detection.py` |
+| `test_detection.py` | 78 unit tests (stdlib only): `python test_detection.py` |
 | `requirements-fine.txt` | Optional magnifier dependencies (pinned versions) |
 | `demo.py` | The demonstration (see below) |
 | `install/install.sh` / `install.ps1` | Target-machine installation (Linux GPU or Windows) |
@@ -228,6 +228,35 @@ counts when a context word accompanies it. Adopted and improved:
   analyzer extended with French, and the router's French rules injected as ad
   hoc recognizers. Ready to plug in (3 steps, see its README), to be tested on
   the target machine.
+
+### The foreign client (same day, a few hours later)
+
+A French professional has FOREIGN clients: an American passport, a company
+headquartered abroad, a cross-border patient. The v1 lock was France-centric;
+fixed by format STRUCTURE (not country by country):
+
+- new direct patterns: **EU-wide VAT numbers** (we caught the French one but
+  not the German one...), **US SSN** (dashed 3-2-4), **Swiss AVS**
+  (756.xxxx), **Italian codice fiscale** (16 structured characters),
+  **international phone numbers** (the E.164 `+prefix` or `00` covers every
+  country at once), **Amex** 15-digit cards;
+- extended contextual patterns: 1-letter + 8-digit passports (recent US),
+  UK NINO; discriminating English keywords (confidential, social security,
+  medical record, attorney-client...);
+- **a serious hole exposed by this very question**: the IBAN regex required
+  at least 20 characters — SHORT IBANs (Belgium 16, Netherlands 18, Norway
+  15) had been slipping through from day one. Fixed and locked by a test;
+- the second curtain enriched accordingly: with `presidio_language: fr`,
+  Presidio's native English recognizers (US_SSN...) do not run, so the
+  international patterns are also injected into `recognizers-fr.json`
+  (11 recognizers).
+
+Honest limit: for names, addresses and context WITHOUT a format (a file
+written in German, a foreign patient's name), regexes can structurally do
+nothing — that is the job of the magnifier (GLiNER is multilingual:
+en/fr/de/es/it/pt, it detects by MEANING) and of the second curtain. On the
+final machine, the magnifier is not a comfort option: it is the layer that
+covers the foreign cases.
 
 ## Hardening from the adversarial review (June 2026)
 

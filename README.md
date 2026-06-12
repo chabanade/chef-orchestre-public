@@ -46,7 +46,7 @@ local. Deux raisons juridiques, verifiees sur sources primaires :
 | `detection.py` | Le cerveau de la serrure : extraction du texte, sensibilite, complexite (Python pur, zero dependance) |
 | `detection_fine.py` | La loupe optionnelle : detection fine PII (GLiNER ou Presidio), fenetres glissantes |
 | `chef_orchestre_hook.py` | La plomberie LiteLLM : fail-closed, default-deny, journal |
-| `test_detection.py` | 62 tests unitaires (stdlib uniquement) : `python test_detection.py` |
+| `test_detection.py` | 78 tests unitaires (stdlib uniquement) : `python test_detection.py` |
 | `requirements-fine.txt` | Dependances optionnelles de la loupe (versions epinglees) |
 | `demo.py` | La demonstration en 4 actes (voir ci-dessous) |
 | `install/install.sh` / `install.ps1` | Installation machine cible (Linux GPU ou Windows) |
@@ -220,6 +220,34 @@ ameliores :
   enrichi du francais, et les regles francaises du routeur injectees en ad hoc
   recognizers. Pret a brancher (3 gestes, voir son README), a tester sur la
   machine cible.
+
+### Le client etranger (meme jour, quelques heures plus tard)
+
+Un professionnel francais a des clients ETRANGERS : passeport americain,
+societe a siege social a l'etranger, patient frontalier. La serrure v1 etait
+franco-centree ; corrige par STRUCTURE de format (pas pays par pays) :
+
+- nouveaux motifs directs : **TVA de toute l'UE** (on detectait la FR mais pas
+  la DE...), **SSN americain** (3-2-4 a tirets), **AVS suisse** (756.xxxx),
+  **codice fiscale italien** (16 caracteres structures), **telephone
+  international** (le `+indicatif` E.164 ou `00` couvre tous les pays d'un
+  coup), **Amex** 15 chiffres ;
+- contextuels etendus : passeport 1 lettre + 8 chiffres (USA recent), NINO
+  britannique ; mots-cles anglais discriminants (confidential, social
+  security, medical record, attorney-client...) ;
+- **trou grave trouve par cette question** : la regex IBAN exigeait 20
+  caracteres minimum — les IBAN COURTS (Belgique 16, Pays-Bas 18, Norvege 15)
+  passaient au travers depuis le debut. Corrige et verrouille par un test ;
+- 2e rideau enrichi en consequence : en langue `fr`, les recognizers natifs
+  anglais de Presidio ne tournent pas, les motifs internationaux sont donc
+  aussi injectes dans `recognizers-fr.json` (11 recognizers).
+
+Limite honnete : pour les noms, adresses et contextes SANS format (un dossier
+redige en allemand, un nom de patient etranger), les regex ne peuvent
+structurellement rien — c'est le role de la loupe (GLiNER est multilingue :
+en/fr/de/es/it/pt, il detecte par le SENS) et du 2e rideau. Sur la machine
+finale, la loupe n'est pas une option de confort : c'est la couche qui couvre
+l'etranger.
 
 ## Durcissements issus de la revue adversariale (juin 2026)
 

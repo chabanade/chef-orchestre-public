@@ -102,6 +102,78 @@ class TestPillage(unittest.TestCase):
         self.assertNotIn("mot-cle:cni", detecter_sensibilite("on organise un picnic"))
 
 
+class TestClientEtranger(unittest.TestCase):
+    """Le professionnel francais a des clients/patients ETRANGERS (question utilisateur du 12/06 au soir) : les identifiants etrangers distinctifs doivent etre
+    vus par la serrure. Donnees FICTIVES."""
+
+    def test_ssn_americain_detecte(self):
+        self.assertIn("ssn_us", detecter_sensibilite("Client US, SSN 078-05-1120, dossier fiscal."))
+
+    def test_tva_allemande_detectee(self):
+        self.assertIn("tva_ue", detecter_sensibilite("Filiale allemande, TVA DE129273398."))
+
+    def test_tva_italienne_detectee(self):
+        self.assertIn("tva_ue", detecter_sensibilite("societe italienne it12345678901"))
+
+    def test_iban_compact_pas_pris_pour_tva_ue(self):
+        # Un IBAN belge compact ne doit pas matcher tva_ue (chiffres derriere).
+        codes = detecter_sensibilite("compte BE71096123456769")
+        self.assertIn("iban", codes)
+        self.assertNotIn("tva_ue", codes)
+
+    def test_telephone_americain_detecte(self):
+        self.assertIn("telephone_international", detecter_sensibilite("Rappeler le +1 212 555 0123."))
+
+    def test_telephone_allemand_prefixe_00(self):
+        self.assertIn("telephone_international", detecter_sensibilite("bureau de Berlin : 0049 30 901820"))
+
+    def test_addition_pas_prise_pour_un_telephone(self):
+        self.assertNotIn("telephone_international", detecter_sensibilite("calcule 2+12345678"))
+
+    def test_avs_suisse_detecte(self):
+        self.assertIn("avs_suisse", detecter_sensibilite("patient suisse, AVS 756.1234.5678.97"))
+
+    def test_codice_fiscale_italien_detecte(self):
+        self.assertIn("codice_fiscale_it", detecter_sensibilite("codice fiscale RSSMRA85T10A562S"))
+
+    def test_amex_15_chiffres_detectee(self):
+        self.assertIn("carte_bancaire", detecter_sensibilite("payee par Amex 3782 822463 10005"))
+
+    def test_passeport_americain_avec_contexte(self):
+        # 9 chiffres (ancien) et 1 lettre + 8 chiffres (recent), mot "passport"
+        self.assertIn("passeport_fr", detecter_sensibilite("US passport 563847290"))
+        self.assertIn("passeport_fr", detecter_sensibilite("passport number C03005988"))
+
+    def test_nino_britannique_avec_contexte(self):
+        self.assertIn("nino_uk", detecter_sensibilite("National Insurance number QQ 12 34 56 C"))
+
+    def test_nino_sans_contexte_ignore(self):
+        self.assertNotIn("nino_uk", detecter_sensibilite("reference produit QQ123456C"))
+
+    def test_mots_cles_anglais(self):
+        self.assertIn("mot-cle:confidential", detecter_sensibilite("This document is CONFIDENTIAL."))
+        self.assertIn("mot-cle:social security", detecter_sensibilite("his social security number"))
+
+    def test_greffier_jetonne_ssn_et_tva_ue(self):
+        from greffier import Greffier
+        g = Greffier()
+        pseudo = g.pseudonymiser_texte("Client US (SSN 078-05-1120), filiale DE129273398.")
+        self.assertNotIn("078-05-1120", pseudo)
+        self.assertNotIn("DE129273398", pseudo)
+        self.assertIn("<SSN_US_1>", pseudo)
+        self.assertIn("<TVA_UE_1>", pseudo)
+        restauree = g.repersonnaliser("Dossier <SSN_US_1> / <TVA_UE_1> traite.")
+        self.assertIn("078-05-1120", restauree)
+        self.assertIn("DE129273398", restauree)
+
+    def test_greffier_jetonne_telephone_international(self):
+        from greffier import Greffier
+        g = Greffier()
+        pseudo = g.pseudonymiser_texte("joignable au +1 212 555 0123")
+        self.assertNotIn("212 555 0123", pseudo)
+        self.assertIn("<TELEPHONE_INTERNATIONAL_1>", pseudo)
+
+
 class TestExtraction(unittest.TestCase):
     """extraire_texte doit tout lire, et lever le drapeau sur ce qu'il ne lit pas."""
 

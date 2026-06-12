@@ -49,18 +49,44 @@ MOTIFS_REGEX = {
     # (?<!\d) : un vrai numero n'est jamais colle derriere un chiffre ; sans
     # ce garde, la regex matchait AU MILIEU d'un numero de TVA (FR40123456824).
     "telephone_fr": re.compile(r"(?<!\d)(?:\+33\s?|0)[1-9](?:[\s.-]?\d{2}){4}\b"),
-    # IGNORECASE : un IBAN tape en minuscules reste un IBAN (trou trouve en revue)
-    "iban": re.compile(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){4,7}(?:[ ]?[A-Z0-9]{1,3})?\b", re.IGNORECASE),
+    # IGNORECASE : un IBAN tape en minuscules reste un IBAN (trou trouve en revue).
+    # {2,7} et non {4,7} : les IBAN COURTS (Belgique 16, Pays-Bas 18, Norvege 15)
+    # passaient au travers — trou trouve par la question "client etranger" du 12/06.
+    "iban": re.compile(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,3})?\b", re.IGNORECASE),
     "numero_securite_sociale": re.compile(r"\b[12]\s?\d{2}\s?(?:0[1-9]|1[0-2]|62|63)\s?(?:\d{2}|2A|2B)\s?\d{3}\s?\d{3}(?:\s?\d{2})?\b"),
     "siret": re.compile(r"\b\d{3}[ ]?\d{3}[ ]?\d{3}[ ]?\d{5}\b"),
     # Volontairement large (toute suite 4x4 chiffres) : un faux positif coute
     # quelques secondes de local, un faux negatif coute une fuite.
-    "carte_bancaire": re.compile(r"\b\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4}\b"),
+    # La 2e alternative couvre l'Amex (15 chiffres en 4-6-5, commence par 34/37).
+    "carte_bancaire": re.compile(r"\b(?:\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4}|3[47]\d{2}[ -]?\d{6}[ -]?\d{5})\b"),
     # TVA intracommunautaire FR (FR + cle 2 caracteres + SIREN 9 chiffres).
     # Identifie l'entreprise, comme le SIRET : meme traitement. Pas de
     # collision avec l'IBAN FR : ici les 11 caracteres apres FR sont colles,
     # et un IBAN compact a un chiffre derriere qui fait echouer le \b final.
     "tva_fr": re.compile(r"\bFR[A-Z0-9]{2}\d{9}\b", re.IGNORECASE),
+    # ------------------------------------------------------------------
+    # CLIENT ETRANGER (12/06 soir) : un professionnel francais a des
+    # clients/patients etrangers. Couverture par STRUCTURE de format
+    # (pas pays par pays), formats distinctifs seulement ; le filet pour
+    # tout le reste = la loupe (GLiNER, multilingue, par le sens) et le
+    # 2e rideau Presidio. Un faux positif = local, jamais grave.
+    # ------------------------------------------------------------------
+    # TVA des autres pays de l'UE (prefixe pays + 8 a 12 alphanum colles).
+    # Un IBAN compact ne matche pas : il a toujours des chiffres derriere
+    # qui font echouer le \b (meme logique que tva_fr).
+    "tva_ue": re.compile(
+        r"\b(?:AT|BE|BG|CY|CZ|DE|DK|EE|EL|ES|FI|HR|HU|IE|IT|LT|LU|LV|MT|NL|PL|PT|RO|SE|SI|SK|XI)"
+        r"[A-Z0-9]{8,12}\b", re.IGNORECASE),
+    # SSN americain : le format a tirets 3-2-4 est distinctif.
+    "ssn_us": re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),
+    # AVS/AHV suisse : 13 chiffres commencant par 756 (le code pays ISO).
+    "avs_suisse": re.compile(r"\b756[.\s]?\d{4}[.\s]?\d{4}[.\s]?\d{2}\b"),
+    # Codice fiscale italien : 16 caracteres tres structures (PACA oblige).
+    "codice_fiscale_it": re.compile(r"\b[A-Za-z]{6}\d{2}[A-Za-z]\d{2}[A-Za-z]\d{3}[A-Za-z]\b"),
+    # Telephone international : +indicatif (E.164) ou prefixe 00. Le "+"
+    # ou le "00" de tete rend le motif sur, quel que soit le pays.
+    # (?<!\d) : ne pas matcher dans "2+1234567" (addition) ni mi-numero.
+    "telephone_international": re.compile(r"(?<!\d)(?:\+|\b00)[1-9](?:[\s.\-]?\d){6,13}\d\b"),
 }
 
 # Motifs CONTEXTUELS (idee reprise de PII-Shield, MIT) : un motif trop
@@ -79,9 +105,18 @@ MOTIFS_CONTEXTUELS = {
         ["carte nationale", "carte d'identite", "carte d'identité",
          "piece d'identite", "pièce d'identité", "cni"],
     ),
+    # Passeports : format FR verifie (2 chiffres + 2 lettres + 5 chiffres)
+    # + variantes internationales courantes (2 lettres + 7 chiffres ;
+    # 1 lettre + 8 chiffres, ex. USA recent ; 9 chiffres, ex. USA ancien).
     "passeport_fr": (
-        re.compile(r"\b(?:\d{2}[A-Za-z]{2}\d{5}|[A-Za-z]{2}\d{7}|\d{9})\b"),
+        re.compile(r"\b(?:\d{2}[A-Za-z]{2}\d{5}|[A-Za-z]{2}\d{7}|[A-Za-z]\d{8}|\d{9})\b"),
         ["passeport", "passport"],
+    ),
+    # NINO britannique (2 lettres + 6 chiffres + 1 lettre, souvent espace
+    # par paires) : assez generique pour exiger son mot de contexte.
+    "nino_uk": (
+        re.compile(r"\b[A-Za-z]{2}\s?(?:\d{2}\s?){3}[A-Da-d]\b"),
+        ["national insurance", "nino"],
     ),
 }
 
@@ -96,6 +131,12 @@ MOTS_CLES_SENSIBLES = [
     "divorce", "plainte", "garde a vue", "garde à vue", "piece d'identite",
     "pièce d'identité", "passeport", "carte vitale", "adresse personnelle",
     "carte d'identite", "carte d'identité", "carte nationale", "cni",
+    # Le mot "securite sociale" seul (sans numero bien forme) doit suffire.
+    "securite sociale", "sécurité sociale", "numero de secu", "numéro de sécu",
+    # Client/dossier etranger redige en anglais : les mots du secret
+    # professionnel anglophone les plus discriminants.
+    "social security", "confidential", "medical record", "attorney-client",
+    "privileged", "payroll", "passport",
 ]
 
 MOTS_CLES_LOURDS = [

@@ -39,12 +39,16 @@ from detection import MOTIFS_CONTEXTUELS, MOTIFS_REGEX, contexte_present
 # Les classes que le greffier sait remplacer : des VALEURS formatees,
 # detectables avec leurs positions exactes. (Les mots-cles contextuels,
 # eux, ne sont pas des valeurs remplacables.)
-# Ordre = du plus SPECIFIQUE au plus generique : l'iban avant tva_fr (un
-# IBAN jetonne ne peut plus etre confondu avec une TVA), et le telephone en
-# DERNIER (sa regex, la plus floue, ne doit manger personne d'autre).
+# Ordre = du plus SPECIFIQUE au plus generique : les TVA avant l'iban (une
+# TVA italienne de 13 caracteres matche aussi la regex iban elargie : la
+# jetonner d'abord lui garde la bonne etiquette ; l'inverse est impossible,
+# un IBAN compact a toujours des chiffres derriere qui font echouer les
+# regex TVA). Les telephones en DERNIER (regex les plus floues).
 CLASSES_PSEUDONYMISABLES = [
-    "email", "iban", "tva_fr", "numero_securite_sociale",
-    "siret", "carte_bancaire", "telephone_fr",
+    "email", "tva_fr", "tva_ue", "iban",
+    "numero_securite_sociale", "ssn_us", "avs_suisse", "codice_fiscale_it",
+    "siret", "carte_bancaire",
+    "telephone_international", "telephone_fr",
 ]
 
 _JETON = re.compile(r"<[A-Z_]+_\d+>")

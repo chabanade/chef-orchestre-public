@@ -72,9 +72,79 @@
                 "name": "passeport fr (2 chiffres + 2 lettres + 5 chiffres, format verifie)",
                 "regex": "\\b\\d{2}[A-Za-z]{2}\\d{5}\\b",
                 "score": 0.4
+            },
+            {
+                "name": "passeport international (2L+7C, 1L+8C, 9C)",
+                "regex": "\\b(?:[A-Za-z]{2}\\d{7}|[A-Za-z]\\d{8}|\\d{9})\\b",
+                "score": 0.2
             }
         ],
         "context": ["passeport", "passport", "voyage"],
         "supported_entity": "FR_PASSEPORT"
+    },
+    {
+        "name": "SSN americain (client etranger ; en langue fr les recognizers natifs anglais de Presidio ne tournent pas)",
+        "supported_language": "fr",
+        "patterns": [
+            {
+                "name": "ssn us 3-2-4 a tirets",
+                "regex": "\\b\\d{3}-\\d{2}-\\d{4}\\b",
+                "score": 0.7
+            }
+        ],
+        "context": ["ssn", "social security", "securite sociale", "sécurité sociale"],
+        "supported_entity": "US_SSN_FR"
+    },
+    {
+        "name": "TVA intracommunautaire UE (hors FR)",
+        "supported_language": "fr",
+        "patterns": [
+            {
+                "name": "tva ue (prefixe pays + 8-12 alphanum)",
+                "regex": "\\b(?:AT|BE|BG|CY|CZ|DE|DK|EE|EL|ES|FI|HR|HU|IE|IT|LT|LU|LV|MT|NL|PL|PT|RO|SE|SI|SK|XI)[A-Za-z0-9]{8,12}\\b",
+                "score": 0.6
+            }
+        ],
+        "context": ["tva", "vat", "intracommunautaire", "ust-id"],
+        "supported_entity": "EU_VAT_FR"
+    },
+    {
+        "name": "Telephone international",
+        "supported_language": "fr",
+        "patterns": [
+            {
+                "name": "telephone E.164 ou prefixe 00",
+                "regex": "(?<!\\d)(?:\\+|\\b00)[1-9](?:[\\s.\\-]?\\d){6,13}\\d\\b",
+                "score": 0.6
+            }
+        ],
+        "context": ["telephone", "téléphone", "phone", "appeler", "joindre"],
+        "supported_entity": "TEL_INTERNATIONAL"
+    },
+    {
+        "name": "AVS suisse",
+        "supported_language": "fr",
+        "patterns": [
+            {
+                "name": "avs 756.xxxx.xxxx.xx",
+                "regex": "\\b756[.\\s]?\\d{4}[.\\s]?\\d{4}[.\\s]?\\d{2}\\b",
+                "score": 0.85
+            }
+        ],
+        "context": ["avs", "ahv", "assurance vieillesse"],
+        "supported_entity": "CH_AVS"
+    },
+    {
+        "name": "Codice fiscale italien",
+        "supported_language": "fr",
+        "patterns": [
+            {
+                "name": "codice fiscale 16 caracteres structures",
+                "regex": "\\b[A-Za-z]{6}\\d{2}[A-Za-z]\\d{2}[A-Za-z]\\d{3}[A-Za-z]\\b",
+                "score": 0.8
+            }
+        ],
+        "context": ["codice fiscale", "fiscale", "italie"],
+        "supported_entity": "IT_CODICE_FISCALE"
     }
 ]
