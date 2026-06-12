@@ -152,6 +152,22 @@ direct (criteres G29 : individualisation, correlation, inference). Cette route
 REDUIT fortement le risque pour les taches mixtes ; elle ne remplace pas le local
 strict pour l'ultra-sensible, et la minimisation reste due.
 
+### L'armoire de SESSION : iterer sans amnesie
+
+Avec une armoire brulee apres chaque aller-retour, le routeur serait amnesique
+entre deux questions d'une meme conversation (le `<IBAN_1>` du tour 1 deviendrait
+irrecuperable au tour 3). Chaque CONVERSATION a donc son armoire : la meme valeur
+garde le meme jeton d'un tour a l'autre, et un jeton pose au tour 1 reste
+restaurable au tour 5. Cle de session : `metadata.session_id` (conseille), sinon
+le champ standard `user`, sinon une armoire commune (poste mono-utilisateur).
+
+Compromis assume, et borne : l'armoire vit plus longtemps, MAIS elle reste en
+memoire d'un seul processus (jamais disque, jamais journal), elle est BRULEE
+apres `CHEF_ARMOIRE_TTL_MINUTES` d'inactivite (30 min par defaut), le nombre de
+sessions est plafonne, et un redemarrage la perd : degradation SURE (jetons
+orphelins opaques, aucune fuite). `CHEF_ARMOIRE_SESSION=0` restaure le brulage
+apres chaque aller-retour (securite maximale, amnesie assumee).
+
 ### Comparaison avec l'existant (etude du 12/06/2026)
 
 Le greffier a ete compare aux solutions publiques : LLM Guard (jumeau conceptuel

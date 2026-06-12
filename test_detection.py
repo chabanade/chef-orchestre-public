@@ -317,6 +317,88 @@ class TestGreffier(unittest.TestCase):
         self.assertIn(r"jean\g<0>$1@exemple.fr", restauree)
 
 
+class TestArmoireSession(unittest.TestCase):
+    """L'armoire de session (decision 12/06) : pouvoir ITERER sur une
+    conversation sans perdre la correspondance, TTL et plafond respectes."""
+
+    def setUp(self):
+        import greffier
+        greffier._sessions.clear()
+
+    def tearDown(self):
+        import greffier
+        greffier._sessions.clear()
+
+    def test_meme_valeur_meme_jeton_entre_deux_tours(self):
+        from greffier import Greffier, obtenir_armoire_session
+        armoire = obtenir_armoire_session("conv-1")
+        tour1 = Greffier(armoire=armoire)
+        p1 = tour1.pseudonymiser_texte("IBAN FR7630006000011234567890189")
+        tour1.detruire()  # fin du tour 1 : l'armoire de session survit
+        tour2 = Greffier(armoire=obtenir_armoire_session("conv-1"))
+        p2 = tour2.pseudonymiser_texte("verifie encore FR7630006000011234567890189")
+        self.assertIn("<IBAN_1>", p1)
+        self.assertIn("<IBAN_1>", p2)  # MEME jeton au tour 2
+
+    def test_jeton_du_tour_1_restaurable_au_tour_5(self):
+        from greffier import Greffier, obtenir_armoire_session
+        tour1 = Greffier(armoire=obtenir_armoire_session("conv-2"))
+        tour1.pseudonymiser_texte("paiement vers FR7630006000011234567890189")
+        tour1.detruire()
+        tour5 = Greffier(armoire=obtenir_armoire_session("conv-2"))
+        reponse = tour5.repersonnaliser("Le compte <IBAN_1> mentionne plus tot est valide.")
+        self.assertIn("FR7630006000011234567890189", reponse)
+
+    def test_sessions_isolees(self):
+        from greffier import Greffier, obtenir_armoire_session
+        a = Greffier(armoire=obtenir_armoire_session("conv-a"))
+        a.pseudonymiser_texte("a@exemple.fr")
+        b = Greffier(armoire=obtenir_armoire_session("conv-b"))
+        # la session B ne connait pas le jeton de la session A
+        self.assertEqual("contact <EMAIL_1>", b.repersonnaliser("contact <EMAIL_1>"))
+
+    def test_ttl_brule_l_armoire(self):
+        import greffier
+        from greffier import Greffier, obtenir_armoire_session
+        armoire = obtenir_armoire_session("conv-ttl")
+        g = Greffier(armoire=armoire)
+        g.pseudonymiser_texte("jean@exemple.fr")
+        # on vieillit artificiellement la session au-dela du TTL
+        armoire.derniere_activite -= (greffier.TTL_MINUTES * 60 + 1)
+        obtenir_armoire_session("autre-conv")  # tout acces declenche la purge
+        self.assertNotIn("conv-ttl", greffier._sessions)
+        self.assertEqual({}, armoire.table)  # brulee, pas seulement oubliee
+
+    def test_plafond_de_sessions(self):
+        import greffier
+        from greffier import obtenir_armoire_session
+        ancien = greffier.MAX_SESSIONS
+        try:
+            greffier.MAX_SESSIONS = 3
+            for i in range(5):
+                obtenir_armoire_session("conv-%d" % i)
+            self.assertLessEqual(len(greffier._sessions), 3)
+        finally:
+            greffier.MAX_SESSIONS = ancien
+
+    def test_compteur_compte_la_demande_pas_la_session(self):
+        from greffier import Greffier, obtenir_armoire_session
+        armoire = obtenir_armoire_session("conv-3")
+        t1 = Greffier(armoire=armoire)
+        data1 = {"messages": [{"role": "user", "content": "IBAN FR7630006000011234567890189"}]}
+        self.assertEqual(1, t1.pseudonymiser_demande(data1))
+        t2 = Greffier(armoire=armoire)
+        data2 = {"messages": [{"role": "user", "content": "question sans rien de sensible"}]}
+        self.assertEqual(0, t2.pseudonymiser_demande(data2))  # 0 pour CE tour
+
+    def test_mode_autonome_brule_toujours(self):
+        from greffier import Greffier
+        g = Greffier()  # sans armoire : comportement historique
+        g.pseudonymiser_texte("jean@exemple.fr")
+        g.detruire()
+        self.assertEqual({}, g.table)
+
+
 class TestRobustesse(unittest.TestCase):
     def test_seuil_env_malforme_ne_crashe_pas(self):
         import os

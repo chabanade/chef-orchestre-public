@@ -36,7 +36,7 @@ from detection import (
     extraire_texte,
     journaliser,
 )
-from greffier import Greffier, jetons_restants
+from greffier import SESSION_ACTIVE, Greffier, jetons_restants, obtenir_armoire_session
 
 CONSIGNE_JETONS = (
     "Des jetons de pseudonymisation au format <NOM_N> (par exemple <IBAN_1>) "
@@ -122,7 +122,16 @@ class ChefOrchestre(CustomLogger):
                 raise _refus(motifs_sensibles,
                              "Route pseudo refusee : contenu non inspectable ou detection en panne, "
                              "impossible de garantir une pseudonymisation complete.")
-            greffier = Greffier()
+            # Armoire de session (decision 12/06) : meme conversation = meme
+            # armoire, pour pouvoir iterer. Cle de session : metadata.session_id
+            # (precis, conseille), sinon le champ standard "user", sinon une
+            # armoire commune (suffisant pour un poste mono-utilisateur).
+            armoire = None
+            if SESSION_ACTIVE:
+                cle_session = ((data.get("metadata") or {}).get("session_id")
+                               or data.get("user") or "session-globale")
+                armoire = obtenir_armoire_session(str(cle_session))
+            greffier = Greffier(armoire=armoire)
             nb_jetons = greffier.pseudonymiser_demande(data)
             # Contre-verification sur le texte PSEUDONYMISE : s'il reste un
             # motif sensible (mot-cle metier, entite vue par la loupe), la
@@ -148,8 +157,10 @@ class ChefOrchestre(CustomLogger):
             _armoires_en_transit[identifiant] = greffier
             data["model"] = ROUTE_CLOUD
             data["stream"] = False  # la re-personnalisation au retour exige une reponse complete
-            journaliser("pseudo-vers-cloud", modele_demande, ROUTE_CLOUD,
-                        ["jetons:" + str(nb_jetons)], len(texte))
+            motifs_journal = ["jetons:" + str(nb_jetons)]
+            if armoire is not None:
+                motifs_journal.append("armoire-session")
+            journaliser("pseudo-vers-cloud", modele_demande, ROUTE_CLOUD, motifs_journal, len(texte))
             return data
 
         # ---- Pilier 1 : SENSIBILITE (gagne toujours) ----
