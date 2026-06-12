@@ -1,0 +1,6 @@
+# Le Pupitre - dependances (installees au DEPLOIEMENT, jamais sur le PC de dev).
+# sqlcipher3-wheels fournit des binaires prets pour Windows, macOS et Linux
+# (pip, sans compilation) : c'est ce qui rend le chiffrement multi-plateforme.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+sqlcipher3-wheels>=0.5.7

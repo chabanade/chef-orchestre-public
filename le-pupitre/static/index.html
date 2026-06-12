@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Le Pupitre</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="app">
+    <aside id="cote">
+      <div id="cote-tete">
+        <h1>Le Pupitre</h1>
+        <button id="btn-nouvelle" title="Nouvelle conversation">+ Nouvelle</button>
+      </div>
+      <ul id="liste-conversations"></ul>
+      <div id="cote-pied">
+        <span id="etat-coffre">coffre chiffre</span>
+      </div>
+    </aside>
+
+    <main id="principal">
+      <div id="fil"></div>
+      <form id="formulaire" autocomplete="off">
+        <textarea id="saisie" rows="1" placeholder="Ecris ici (donnees clients/patients : elles restent locales)"></textarea>
+        <button id="btn-envoyer" type="submit">Envoyer</button>
+      </form>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

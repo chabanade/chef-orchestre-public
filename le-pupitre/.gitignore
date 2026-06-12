@@ -1,0 +1,13 @@
+# Le coffre chiffre et ses fichiers annexes : JAMAIS dans git.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Secrets / config locale
+.env
+
+# Environnement et caches Python
+.venv/
+__pycache__/
+*.pyc
