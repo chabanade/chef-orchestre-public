@@ -105,6 +105,22 @@ tant qu'il n'est pas repare. Honnetete : aucun cumul n'atteint 100 % de rappel ;
 classe vraiment ultra-sensible doit rester en local PAR DEFAUT, la loupe ne sert qu'a
 attraper ce qui tenterait d'en sortir.
 
+### Choix des moteurs : etude de marche (12/06/2026)
+
+Une etude comparative des detecteurs PII open source utilisables 100 % en local sur
+du francais (panorama, qualite fr, defense en profondeur, outils specialises) confirme
+cette pile comme la meilleure base libre a date : `gliner_multi_pii-v1` est, en juin
+2026, le seul modele PII zero-shot a la fois sous licence libre ET avec francais
+atteste ; Presidio est le framework hybride de reference (son editeur prone lui-meme
+le cumul de detecteurs). Enseignement applique : seuil GLiNER par defaut a 0.3, car
+son biais documente est precision haute / rappel bas, l'inverse de ce qu'exige le
+fail-closed (un faux positif coute un passage en local, un faux negatif une fuite).
+Pistes d'extension francaises (a auditer avant usage) : Anonym-IA CamemBERT PII (MIT),
+NERmembert (MIT), eds-pseudo de l'AP-HP (BSD-3, clinique). Ecartes : Piiranha (licence
+non commerciale, performances contestees par arXiv 2504.12308), eu-pii-safeguard
+(licence d'evaluation), detecteurs cloud (demander au cloud si une donnee peut sortir
+vers le cloud viole le secret par l'acte meme de verification).
+
 ## Durcissements issus de la revue adversariale (juin 2026)
 
 Trois relecteurs contradicteurs (securite, concurrence, exactitude des API) ont attaque

@@ -54,7 +54,10 @@ DEMANDES = [
     if nom.strip()
 ]
 STRICTE = os.environ.get("CHEF_LOUPE_STRICTE", "0").strip() == "1"
-SEUIL = _env_float("CHEF_SEUIL_FIN", 0.4)
+# Seuil 0.3 par defaut : GLiNER a une precision haute mais un rappel bas
+# (etude 12/06/2026), or en fail-closed c'est le RAPPEL qui protege le secret.
+# Un faux positif coute un passage en local ; un faux negatif, une fuite.
+SEUIL = _env_float("CHEF_SEUIL_FIN", 0.3)
 MODELE_GLINER = os.environ.get("CHEF_MODELE_GLINER", "urchade/gliner_multi_pii-v1")
 MODELE_SPACY_FR = os.environ.get("CHEF_MODELE_SPACY", "fr_core_news_md")
 
