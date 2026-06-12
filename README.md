@@ -1,5 +1,7 @@
 # Le Chef d'Orchestre — routeur local/cloud fail-closed pour l'IA
 
+> 🇬🇧 [English version](README.en.md)
+
 Aiguilleur de demandes IA : les donnees sensibles restent sur la machine (modele local),
 les taches lourdes et anodines peuvent partir vers le cloud. Construit pendant le workshop
 LE LABO IA (juin 2026) autour d'une idee simple : la frontiere local/cloud est d'abord une
@@ -44,20 +46,24 @@ local. Deux raisons juridiques, verifiees sur sources primaires :
 | `detection.py` | Le cerveau de la serrure : extraction du texte, sensibilite, complexite (Python pur, zero dependance) |
 | `detection_fine.py` | La loupe optionnelle : detection fine PII (GLiNER ou Presidio), fenetres glissantes |
 | `chef_orchestre_hook.py` | La plomberie LiteLLM : fail-closed, default-deny, journal |
-| `test_detection.py` | 29 tests unitaires (stdlib uniquement) : `python test_detection.py` |
+| `test_detection.py` | 50 tests unitaires (stdlib uniquement) : `python test_detection.py` |
 | `requirements-fine.txt` | Dependances optionnelles de la loupe (versions epinglees) |
 | `demo.py` | La demonstration en 4 actes (voir ci-dessous) |
 | `install/install.sh` / `install.ps1` | Installation machine cible (Linux GPU ou Windows) |
 | `start.sh` / `start.ps1` | Lancement du routeur (Ollama + LiteLLM) |
 | `.env.example` | Les variables a remplir (les cles ne passent JAMAIS par git) |
 
-## La demo en 4 actes (`demo.py`)
+## La demo (`demo.py`)
 
 1. **Question anodine simple** -> part en LOCAL (par economie).
 2. **Question avec donnee sensible** (faux IBAN) -> FORCEE en local, motif journalise.
 3. **Fail-closed** : on coupe le modele local, on repose la question sensible -> ERREUR
    PROPRE, zero tentative cloud. C'est la preuve qui compte devant un juriste.
 4. **Tache lourde anodine** -> aiguillee vers le CLOUD (si cle presente).
+5. **Aller-retour de l'armoire** : un IBAN part en `<IBAN_1>`, le cloud repond avec le
+   jeton, la vraie valeur est restauree en local.
+6. **Refus de l'armoire** : le mot "patient" (contexte, pas une valeur remplacable)
+   fait refuser la route pseudonymisee : une anonymisation incomplete ne sort pas.
 
 ## Installation
 
