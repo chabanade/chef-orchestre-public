@@ -8,3 +8,6 @@ journal-routage.jsonl
 __pycache__/
 *.pyc
 .venv/
+
+# Sauvegardes auto locales (jamais dans git)
+sauvegardes-contexte/
