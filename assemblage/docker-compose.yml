@@ -1,0 +1,57 @@
+# ============================================================
+# Le kit d'assemblage : Ollama + Chef d'Orchestre + Le Pupitre
+# Une seule commande : docker compose up -d --build
+# ============================================================
+# Tout tourne en LOCAL, sur un reseau interne. SEUL Le Pupitre est expose,
+# et seulement sur 127.0.0.1 (pas sur le reseau). Ollama et le routeur ne
+# sont joignables qu'entre conteneurs : aucune porte ouverte vers l'exterieur.
+
+services:
+  # Le moteur local : sert les modeles (chat + embeddings) sur la machine.
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama:/root/.ollama
+    networks: [interne]
+    restart: unless-stopped
+
+  # Le Chef d'Orchestre : la serrure (LiteLLM + notre hook fail-closed).
+  routeur:
+    build:
+      context: ..                       # racine du depot chef-orchestre
+      dockerfile: assemblage/Dockerfile.routeur
+    environment:
+      OLLAMA_API_BASE: http://ollama:11434
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?definir LITELLM_MASTER_KEY dans .env}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}   # vide = route cloud dormante
+      CHEF_ROUTES_LOCALES: local-sensible,chef-auto,local-embeddings
+    depends_on: [ollama]
+    networks: [interne]
+    restart: unless-stopped
+
+  # Le Pupitre : l'interface chiffree. Seul service expose (127.0.0.1).
+  pupitre:
+    build:
+      context: ../le-pupitre
+      dockerfile: Dockerfile
+    environment:
+      CHEF_PUPITRE_BASE_URL: http://routeur:4000
+      CHEF_PUPITRE_CLE: ${LITELLM_MASTER_KEY}
+      CHEF_PUPITRE_PASSPHRASE: ${CHEF_PUPITRE_PASSPHRASE:?definir CHEF_PUPITRE_PASSPHRASE dans .env}
+      CHEF_PUPITRE_MODELE: chef-auto
+      CHEF_PUPITRE_MODELE_EMBED: local-embeddings
+      CHEF_PUPITRE_DB: /donnees/pupitre.db
+    volumes:
+      - pupitre:/donnees                # coffre chiffre persistant
+    ports:
+      - "127.0.0.1:8800:8800"
+    depends_on: [routeur]
+    networks: [interne]
+    restart: unless-stopped
+
+volumes:
+  ollama: {}
+  pupitre: {}
+
+networks:
+  interne: {}

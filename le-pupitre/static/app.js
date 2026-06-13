@@ -69,6 +69,41 @@ function ajouterAvis(texte) {
   fil.scrollTop = fil.scrollHeight;
 }
 
+// --- documents (RAG local) ----------------------------------------------
+async function chargerDocuments() {
+  const docs = await api("/api/documents");
+  const ul = $("#liste-documents");
+  ul.innerHTML = "";
+  for (const d of docs) {
+    const li = document.createElement("li");
+    li.innerHTML = `<span>${d.source}</span><button title="Retirer">✕</button>`;
+    li.querySelector("button").addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await api("/api/documents/" + encodeURIComponent(d.source), { method: "DELETE" });
+      await chargerDocuments();
+    });
+    ul.appendChild(li);
+  }
+}
+
+async function deposerDocument(fichier) {
+  const fd = new FormData();
+  fd.append("fichier", fichier);
+  const li = document.createElement("li");
+  li.textContent = "… " + fichier.name;
+  $("#liste-documents").prepend(li);
+  try {
+    const rep = await fetch("/api/documents", { method: "POST", body: fd });
+    if (!rep.ok) {
+      const err = await rep.json().catch(() => ({}));
+      ajouterAvis("Document refuse : " + (err.detail || rep.status));
+    }
+  } catch (e) {
+    ajouterAvis("Echec du depot du document.");
+  }
+  await chargerDocuments();
+}
+
 // --- envoi --------------------------------------------------------------
 async function envoyer(texte) {
   if (!conversationActive) await nouvelleConversation();
@@ -81,7 +116,11 @@ async function envoyer(texte) {
     res = await api("/api/envoyer", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ conversation_id: conversationActive, message: texte }),
+      body: JSON.stringify({
+        conversation_id: conversationActive,
+        message: texte,
+        rag: $("#rag").checked,
+      }),
     });
   } catch (e) {
     attente.remove();
@@ -131,5 +170,14 @@ saisie.addEventListener("input", () => {
 
 $("#btn-nouvelle").addEventListener("click", nouvelleConversation);
 
+// Depot de document
+$("#btn-doc").addEventListener("click", () => $("#fichier-doc").click());
+$("#fichier-doc").addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  if (f) deposerDocument(f);
+  e.target.value = ""; // permet de re-deposer le meme fichier
+});
+
 // --- demarrage ----------------------------------------------------------
 chargerConversations();
+chargerDocuments();

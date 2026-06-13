@@ -1,0 +1,2 @@
+# Le .env du kit contient la cle du routeur et la passphrase du coffre : jamais dans git.
+.env

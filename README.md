@@ -55,7 +55,8 @@ local. Deux raisons juridiques, verifiees sur sources primaires :
 | `start.sh` / `start.ps1` | Lancement du routeur (Ollama + LiteLLM) |
 | `.env.example` | Les variables a remplir (les cles ne passent JAMAIS par git) |
 | `rideau-presidio/` | Le 2e rideau optionnel : guardrail Presidio de LiteLLM, conteneurs locaux + regles francaises injectees |
-| `le-pupitre/` | L'interface utilisateur maison : petite fenetre de chat multi-plateforme, historique CHIFFRE par conception (SQLCipher) |
+| `le-pupitre/` | L'interface utilisateur maison : chat multi-plateforme, historique CHIFFRE (SQLCipher) + RAG local (questions sur ses propres documents, sans fuite) |
+| `assemblage/` | Le kit Docker : Ollama + le routeur + Le Pupitre en une commande (`docker compose up`) |
 
 ## La demo (`demo.py`)
 

@@ -22,7 +22,7 @@ import sys
 import threading
 
 try:
-    from fastapi import FastAPI, HTTPException
+    from fastapi import FastAPI, File, HTTPException, UploadFile
     from fastapi.responses import FileResponse, JSONResponse
     from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
@@ -33,6 +33,7 @@ except ImportError:
     )
     raise
 
+import rag
 import relais
 from coffre import Coffre
 
@@ -44,6 +45,9 @@ DB = os.environ.get("CHEF_PUPITRE_DB", os.path.join(ICI, "pupitre.db"))
 BASE_URL = os.environ.get("CHEF_PUPITRE_BASE_URL", "http://localhost:4000")
 CLE_ROUTEUR = os.environ.get("CHEF_PUPITRE_CLE", "")
 MODELE = os.environ.get("CHEF_PUPITRE_MODELE", "chef-auto")
+# Modele d'embedding LOCAL pour le RAG (doit etre une route LOCALE du routeur,
+# listee dans CHEF_ROUTES_LOCALES : le texte des documents ne sort jamais).
+MODELE_EMBED = os.environ.get("CHEF_PUPITRE_MODELE_EMBED", "local-embeddings")
 EXIGER_CHIFFREMENT = os.environ.get("CHEF_PUPITRE_EXIGER_CHIFFREMENT", "1").strip() != "0"
 
 
@@ -61,6 +65,9 @@ def _obtenir_passphrase():
 _coffre = Coffre(DB, _obtenir_passphrase(), exiger_chiffrement=EXIGER_CHIFFREMENT)
 _verrou = threading.Lock()
 
+# La bibliotheque RAG : meme coffre (corpus chiffre), embedder LOCAL via le routeur.
+_biblio = rag.Bibliotheque(_coffre, rag.Embedder(BASE_URL, CLE_ROUTEUR, MODELE_EMBED))
+
 app = FastAPI(title="Le Pupitre", docs_url=None, redoc_url=None)
 
 
@@ -71,6 +78,7 @@ class NouvelleConv(BaseModel):
 class Envoi(BaseModel):
     conversation_id: int
     message: str
+    rag: bool = False  # True = repondre en s'appuyant sur les documents charges
 
 
 @app.get("/")
@@ -121,6 +129,20 @@ def envoyer(corps: Envoi):
         _coffre.ajouter_message(corps.conversation_id, "user", texte)
         historique = _coffre.messages(corps.conversation_id)
 
+    # RAG : si demande, on retrouve les extraits pertinents des documents (en
+    # LOCAL) et on les injecte en tete comme contexte. On enregistre le message
+    # de l'utilisateur tel quel (sans le contexte) : le contexte est ephemere,
+    # il ne pollue pas l'historique.
+    if corps.rag:
+        try:
+            with _verrou:
+                extraits = _biblio.interroger(texte, k=4)
+            contexte = rag.construire_contexte(extraits)
+        except rag.RagErreur as exc:
+            return JSONResponse(status_code=200, content={"type": "refus", "message": str(exc)})
+        if contexte:
+            historique = [{"role": "system", "contenu": contexte}] + historique
+
     requete = relais.construire_requete(historique, MODELE)
     try:
         reponse = relais.envoyer(requete, BASE_URL, CLE_ROUTEUR)
@@ -141,6 +163,41 @@ def envoyer(corps: Envoi):
     with _verrou:
         _coffre.ajouter_message(corps.conversation_id, "assistant", reponse)
     return {"type": "message", "role": "assistant", "contenu": reponse}
+
+
+# ------------------------------------------------------------------
+# Documents (RAG local) : deposer, lister, retirer. Tout reste chiffre,
+# l'embedding se fait en local via le routeur.
+# ------------------------------------------------------------------
+@app.get("/api/documents")
+def lister_documents():
+    with _verrou:
+        return _coffre.sources()
+
+
+@app.post("/api/documents")
+async def deposer_document(fichier: UploadFile = File(...)):
+    donnees = await fichier.read()
+    try:
+        texte = rag.extraire_texte_fichier(fichier.filename, donnees=donnees)
+    except rag.RagErreur as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not (texte or "").strip():
+        raise HTTPException(status_code=400, detail="Document vide ou illisible.")
+    try:
+        with _verrou:
+            n = _biblio.ingerer(fichier.filename, texte)
+    except rag.RagErreur as exc:
+        # Embedder local injoignable : on le DIT, on n'ingere pas a moitie.
+        raise HTTPException(status_code=503, detail=str(exc))
+    return {"source": fichier.filename, "morceaux": n}
+
+
+@app.delete("/api/documents/{source}")
+def retirer_document(source: str):
+    with _verrou:
+        _coffre.supprimer_source(source)
+    return {"retire": source}
 
 
 # Fichiers statiques (app.js, style.css) sous /static

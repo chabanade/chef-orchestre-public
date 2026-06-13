@@ -49,8 +49,22 @@ body {
 }
 #liste-conversations li:hover { background: var(--bord); color: var(--texte); }
 #liste-conversations li.active { background: var(--bord); color: var(--texte); }
+/* Bloc documents (RAG) */
+#bloc-documents { border-top: 1px solid var(--bord); padding: 10px 12px; max-height: 35%; display: flex; flex-direction: column; }
+#documents-tete { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--doux); text-transform: uppercase; letter-spacing: .4px; }
+#btn-doc { background: none; border: 1px solid var(--bord); color: var(--texte); border-radius: 6px; cursor: pointer; padding: 2px 8px; }
+#liste-documents { list-style: none; margin: 8px 0 0; padding: 0; overflow-y: auto; }
+#liste-documents li { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; color: var(--doux); padding: 5px 6px; border-radius: 6px; }
+#liste-documents li:hover { background: var(--bord); }
+#liste-documents li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#liste-documents li button { background: none; border: 0; color: var(--doux); cursor: pointer; }
+
 #cote-pied { padding: 12px 16px; border-top: 1px solid var(--bord); font-size: 12px; color: var(--doux); }
 #etat-coffre::before { content: "🔒 "; }
+
+/* Bascule RAG dans la barre de saisie */
+#bascule-rag { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--doux); white-space: nowrap; cursor: pointer; user-select: none; }
+#bascule-rag input { accent-color: var(--accent); }
 
 /* Colonne principale */
 #principal { flex: 1; display: flex; flex-direction: column; min-width: 0; }

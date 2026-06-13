@@ -57,7 +57,8 @@ doubt: local. Two legal reasons, checked against primary sources:
 | `start.sh` / `start.ps1` | Router startup (Ollama + LiteLLM) |
 | `.env.example` | The variables to fill in (keys NEVER go through git) |
 | `rideau-presidio/` | The optional second curtain: LiteLLM's Presidio guardrail, local containers + injected French rules |
-| `le-pupitre/` | The home-grown user interface: a small cross-platform chat window, history ENCRYPTED by design (SQLCipher) |
+| `le-pupitre/` | The home-grown user interface: cross-platform chat, history ENCRYPTED (SQLCipher) + local RAG (ask questions about your own documents, no leak) |
+| `assemblage/` | The Docker kit: Ollama + the router + Le Pupitre in one command (`docker compose up`) |
 
 Note: code comments and log labels are in French (the project was born in a
 French regulated-professions context: lawyers, healthcare, accountants). Every

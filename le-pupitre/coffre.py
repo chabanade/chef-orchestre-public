@@ -125,6 +125,19 @@ class Coffre:
             " cree_le TEXT NOT NULL,"
             " FOREIGN KEY (conversation_id) REFERENCES conversations(id))"
         )
+        # Le corpus RAG (documents de l'utilisateur) vit DANS le coffre chiffre,
+        # exactement comme les conversations : un PDF de client est aussi
+        # sensible que la conversation a son sujet. 'vecteur' = l'embedding du
+        # morceau, calcule en LOCAL (Ollama), stocke en JSON.
+        self._cx.execute(
+            "CREATE TABLE IF NOT EXISTS documents ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " source TEXT NOT NULL,"
+            " position INTEGER NOT NULL,"
+            " contenu TEXT NOT NULL,"
+            " vecteur TEXT NOT NULL,"
+            " cree_le TEXT NOT NULL)"
+        )
 
     # -- ecriture -----------------------------------------------------------
     def nouvelle_conversation(self, titre):
@@ -168,6 +181,32 @@ class Coffre:
             (conversation_id,),
         ).fetchall()
         return [{"role": r, "contenu": c, "cree_le": d} for (r, c, d) in lignes]
+
+    # -- corpus RAG (documents) --------------------------------------------
+    def ajouter_chunk(self, source, position, contenu, vecteur_json):
+        self._cx.execute(
+            "INSERT INTO documents (source, position, contenu, vecteur, cree_le) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (source, position, contenu, vecteur_json, _maintenant()),
+        )
+
+    def chunks(self):
+        """Tous les morceaux du corpus, avec leur vecteur (JSON brut)."""
+        lignes = self._cx.execute(
+            "SELECT source, position, contenu, vecteur FROM documents"
+        ).fetchall()
+        return [{"source": s, "position": p, "contenu": c, "vecteur": v}
+                for (s, p, c, v) in lignes]
+
+    def sources(self):
+        """Documents charges, avec le nombre de morceaux de chacun."""
+        lignes = self._cx.execute(
+            "SELECT source, COUNT(*) FROM documents GROUP BY source ORDER BY source"
+        ).fetchall()
+        return [{"source": s, "morceaux": n} for (s, n) in lignes]
+
+    def supprimer_source(self, source):
+        self._cx.execute("DELETE FROM documents WHERE source = ?", (source,))
 
     def fermer(self):
         try:

@@ -1,0 +1,19 @@
+# Image du Chef d'Orchestre : LiteLLM officiel + notre serrure (le hook).
+# On part de l'image LiteLLM et on y depose nos fichiers Python + la config.
+# (La loupe GLiNER/Presidio est optionnelle : non installee ici ; la serrure
+#  regex + la vigie suffisent au kit. Pour la loupe : ajouter ses deps et
+#  CHEF_DETECTION_FINE, cf. README du Chef d'Orchestre.)
+#
+# Contexte de build attendu : la RACINE du depot chef-orchestre
+# (docker-compose.yml le fixe a `..`).
+FROM ghcr.io/berriai/litellm:main-stable
+
+WORKDIR /app
+COPY detection.py detection_fine.py greffier.py chef_orchestre_hook.py vigie.py config.yaml ./
+COPY packs-pays/ ./packs-pays/
+
+# Pour que LiteLLM importe le hook (chef_orchestre_hook.proxy_handler_instance).
+ENV PYTHONPATH=/app
+
+# L'ENTRYPOINT de l'image est `litellm` ; on lui passe notre config.
+CMD ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]

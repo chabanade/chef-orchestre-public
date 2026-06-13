@@ -14,6 +14,16 @@
         <button id="btn-nouvelle" title="Nouvelle conversation">+ Nouvelle</button>
       </div>
       <ul id="liste-conversations"></ul>
+
+      <div id="bloc-documents">
+        <div id="documents-tete">
+          <span>Mes documents</span>
+          <button id="btn-doc" title="Ajouter un document (local, chiffre)">📎</button>
+          <input id="fichier-doc" type="file" accept=".txt,.md,.pdf" hidden>
+        </div>
+        <ul id="liste-documents"></ul>
+      </div>
+
       <div id="cote-pied">
         <span id="etat-coffre">coffre chiffre</span>
       </div>
@@ -22,6 +32,9 @@
     <main id="principal">
       <div id="fil"></div>
       <form id="formulaire" autocomplete="off">
+        <label id="bascule-rag" title="Repondre a partir de mes documents (local)">
+          <input id="rag" type="checkbox"> 📚 Mes documents
+        </label>
         <textarea id="saisie" rows="1" placeholder="Ecris ici (donnees clients/patients : elles restent locales)"></textarea>
         <button id="btn-envoyer" type="submit">Envoyer</button>
       </form>

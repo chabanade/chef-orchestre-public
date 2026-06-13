@@ -16,6 +16,7 @@ import tempfile
 import unittest
 
 import coffre as coffre_mod
+import rag
 import relais
 from coffre import Coffre, CoffreNonChiffreError
 
@@ -131,6 +132,94 @@ class TestRelais(unittest.TestCase):
     def test_extraire_reponse_forme_inattendue_ne_crashe_pas(self):
         self.assertEqual("", relais.extraire_reponse({"oups": 1}))
         self.assertEqual("", relais.extraire_reponse(None))
+
+
+class FauxEmbedder:
+    """Embedder deterministe pour les tests (aucun reseau, rien a installer) :
+    un texte devient le compte de mots d'un petit vocabulaire fixe. Deux textes
+    qui parlent de la meme chose ont des vecteurs proches -> le cosinus classe
+    correctement, ce qui suffit a prouver la LOGIQUE du RAG."""
+
+    VOCAB = ["chat", "chien", "facture", "patient", "iban"]
+
+    def vecteur(self, texte):
+        return self.vecteurs([texte])[0]
+
+    def vecteurs(self, textes):
+        out = []
+        for t in textes:
+            bas = (t or "").lower()
+            out.append([float(bas.count(mot)) for mot in self.VOCAB])
+        return out
+
+
+class TestRagLogique(unittest.TestCase):
+    def test_decouper_texte_court_un_seul_morceau(self):
+        self.assertEqual(["bonjour"], rag.decouper("bonjour"))
+
+    def test_decouper_couvre_tout_avec_chevauchement(self):
+        texte = "mot " * 1000  # ~4000 caracteres
+        morceaux = rag.decouper(texte, taille=1000, chevauchement=150)
+        self.assertGreater(len(morceaux), 1)
+        self.assertTrue(all(len(m) <= 1000 for m in morceaux))
+
+    def test_cosinus_valeurs_connues(self):
+        self.assertAlmostEqual(1.0, rag.cosinus([1, 0], [2, 0]))   # meme direction
+        self.assertAlmostEqual(0.0, rag.cosinus([1, 0], [0, 1]))   # orthogonaux
+        self.assertEqual(0.0, rag.cosinus([0, 0], [1, 1]))          # vecteur nul -> 0, pas de crash
+
+    def test_construire_contexte_vide(self):
+        self.assertIsNone(rag.construire_contexte([]))
+
+    def test_construire_contexte_anti_invention(self):
+        ctx = rag.construire_contexte([{"source": "dossier.pdf", "contenu": "extrait"}])
+        self.assertIn("dossier.pdf", ctx)
+        self.assertIn("extrait", ctx)
+        self.assertIn("inventer", ctx.lower())  # consigne anti-hallucination presente
+
+
+class TestBibliotheque(unittest.TestCase):
+    def setUp(self):
+        fd, self.chemin = tempfile.mkstemp(suffix=".db", prefix="pupitre-rag-")
+        os.close(fd)
+        os.remove(self.chemin)
+        self.coffre = Coffre(self.chemin, "p", exiger_chiffrement=False)
+        self.biblio = rag.Bibliotheque(self.coffre, FauxEmbedder())
+
+    def tearDown(self):
+        self.coffre.fermer()
+        if os.path.exists(self.chemin):
+            os.remove(self.chemin)
+
+    def test_ingerer_compte_les_morceaux(self):
+        n = self.biblio.ingerer("note.txt", "Le chat dort sur le canape.")
+        self.assertEqual(1, n)
+        self.assertEqual([{"source": "note.txt", "morceaux": 1}], self.coffre.sources())
+
+    def test_interroger_retrouve_le_bon_extrait(self):
+        self.biblio.ingerer("animaux.txt", "Le chat dort sur le canape.")
+        self.biblio.ingerer("jardin.txt", "Le chien aboie dans le jardin.")
+        self.biblio.ingerer("compta.txt", "La facture du patient est elevee.")
+        res = self.biblio.interroger("ou est le chat", k=1)
+        self.assertEqual(1, len(res))
+        self.assertEqual("animaux.txt", res[0]["source"])
+
+    def test_interroger_corpus_vide(self):
+        self.assertEqual([], self.biblio.interroger("quoi que ce soit"))
+
+    def test_supprimer_source(self):
+        self.biblio.ingerer("a.txt", "Le chat.")
+        self.biblio.ingerer("b.txt", "Le chien.")
+        self.coffre.supprimer_source("a.txt")
+        sources = [s["source"] for s in self.coffre.sources()]
+        self.assertEqual(["b.txt"], sources)
+
+    def test_corpus_range_dans_le_coffre(self):
+        # Le corpus RAG doit vivre dans le MEME coffre (donc chiffre en prod).
+        self.biblio.ingerer("secret.txt", "iban et facture du patient")
+        chunks = self.coffre.chunks()
+        self.assertEqual(1, len(chunks))
+        self.assertIn("vecteur", chunks[0])
 
 
 if __name__ == "__main__":

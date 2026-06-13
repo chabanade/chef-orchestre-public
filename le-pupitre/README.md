@@ -96,7 +96,7 @@ mémoire).
 
 ## Prouver le chiffrement au déploiement (à faire le jour J)
 
-Le code est testé en pur Python ici (`python test_pupitre.py`, **12 tests**),
+Le code est testé en pur Python ici (`python test_pupitre.py`, **22 tests**),
 mais cela prouve la *logique* de stockage en mode développement. La preuve du
 chiffrement **réel** se fait sur la machine cible, une fois SQLCipher installé,
 en 3 gestes :
@@ -110,10 +110,40 @@ en 3 gestes :
 Tant que ce test n'est pas passé sur la machine cible, on ne dit pas « c'est
 chiffré » — on dit « c'est prêt à l'être ».
 
+## Le RAG local : poser des questions sur ses propres documents
+
+La première compétence agentique, et le plus gros saut vers l'expérience
+« Claude Code » — **sans aucune fuite**. On dépose un document (📎, formats
+`.txt` / `.md` / `.pdf`), on coche « 📚 Mes documents », et on interroge ses
+dossiers.
+
+Comment la confidentialité est tenue (voir `rag.py`) :
+- le document est découpé en morceaux, chaque morceau est transformé en vecteur
+  par un modèle d'embedding **local** (Ollama), appelé **via le routeur** sur la
+  route `local-embeddings` — qui figure dans `CHEF_ROUTES_LOCALES`. Le texte des
+  documents ne part donc **jamais** au cloud (la serrure refuserait un embedding
+  vers une route non locale) ;
+- morceaux **et** vecteurs sont rangés dans le **coffre chiffré**, comme les
+  conversations : un PDF de client est aussi sensible que la discussion à son
+  sujet ;
+- à la question, on retrouve les extraits proches (similarité cosinus, en
+  local) et on les injecte dans le prompt avec une consigne **anti-invention**
+  (« réponds uniquement à partir des extraits, sinon dis-le, cite la source »).
+
+Pré-requis au déploiement : un modèle d'embedding dans Ollama
+(`ollama pull nomic-embed-text`) et la route `local-embeddings` dans
+`config.yaml` (déjà fournie) + dans `CHEF_ROUTES_LOCALES`.
+
+## Tout lancer d'un coup : le kit d'assemblage
+
+Le dossier `../assemblage/` monte Ollama + le Chef d'Orchestre + Le Pupitre en
+une commande (`docker compose up -d --build`). C'est la façon recommandée de
+faire tourner l'ensemble le jour J.
+
 ## Ce que la v1 ne fait PAS (franchise)
 
-Pas de RAG/upload de documents, pas de multi-utilisateurs, pas de streaming mot
-à mot (la route « méthode de l'armoire » exige de toute façon la réponse
-complète), pas de génération d'images. C'est un **chat confidentiel** simple et
-solide. Le reste viendra si le besoin est réel — sans jamais sacrifier la
-première note : le chiffrement.
+Pas de multi-utilisateurs, pas de streaming mot à mot (la route « méthode de
+l'armoire » exige de toute façon la réponse complète), pas de génération
+d'images. C'est un **chat confidentiel avec RAG local** simple et solide. Le
+reste viendra si le besoin est réel — sans jamais sacrifier la première note :
+le chiffrement.

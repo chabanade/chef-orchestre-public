@@ -40,6 +40,16 @@ model_list:
       model: ollama_chat/qwen3:4b
       api_base: os.environ/OLLAMA_API_BASE
 
+  # Embeddings LOCAUX pour le RAG du Pupitre (questions sur ses propres
+  # documents). Modele d'embedding servi par Ollama (ex. nomic-embed-text :
+  # `ollama pull nomic-embed-text`). DOIT figurer dans CHEF_ROUTES_LOCALES :
+  # le texte des documents ne part ainsi JAMAIS au cloud (la serrure refuse
+  # tout embedding vers une route non locale).
+  - model_name: local-embeddings
+    litellm_params:
+      model: ollama/nomic-embed-text
+      api_base: os.environ/OLLAMA_API_BASE
+
 litellm_settings:
   # La serrure : detection sensibilite + complexite + journal + fail-closed
   callbacks: chef_orchestre_hook.proxy_handler_instance
