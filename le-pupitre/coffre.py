@@ -85,9 +85,16 @@ class Coffre:
         # plusieurs threads ; l'acces est serialise par un verrou cote serveur
         # (serveur.py). Sans ce verrou, ne PAS partager le coffre entre threads.
         self._cx = self._pilote.connect(chemin, isolation_level=None, check_same_thread=False)
-        if self.chiffre:
-            self._deverrouiller(passphrase)
-        self._creer_schema()
+        try:
+            if self.chiffre:
+                self._deverrouiller(passphrase)
+            self._creer_schema()
+        except Exception:
+            # Mauvaise passphrase / fichier illisible : on REFERME le fichier
+            # avant de propager, pour ne pas laisser un handle ouvert (sinon le
+            # .db reste verrouille sur le disque sous Windows).
+            self.fermer()
+            raise
 
     # -- ouverture chiffree -------------------------------------------------
     def _deverrouiller(self, passphrase):
@@ -99,8 +106,14 @@ class Coffre:
         (ou le fichier corrompu) -> on leve une erreur claire, on ne cree
         SURTOUT pas une base parallele.
         """
-        # Binding parametre supporte par sqlcipher3 ; evite toute injection.
-        self._cx.execute("PRAGMA key = ?", (passphrase,))
+        # SQLite n'autorise PAS de parametre lie (?) dans un PRAGMA : la forme
+        # "PRAGMA key = ?" leve une erreur de syntaxe. On doit donc injecter la
+        # passphrase en litteral -> on echappe les apostrophes (on les double)
+        # pour qu'une passphrase contenant une ' ne casse pas la requete ni
+        # n'ouvre d'injection. SQLCipher applique ensuite sa derivation forte
+        # (PBKDF2-HMAC-SHA512) sur cette passphrase.
+        pp = (passphrase or "").replace("'", "''")
+        self._cx.execute("PRAGMA key = '%s'" % pp)
         try:
             self._cx.execute("SELECT count(*) FROM sqlite_master").fetchone()
         except Exception as exc:  # mauvaise passphrase ou fichier non-SQLCipher

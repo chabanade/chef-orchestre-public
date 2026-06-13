@@ -108,6 +108,50 @@ class TestFailClosed(unittest.TestCase):
             Coffre("x.db", "   ", exiger_chiffrement=True)
 
 
+class TestChiffrementReel(unittest.TestCase):
+    """Quand SQLCipher EST present (machine de deploiement / venv), on prouve le
+    chiffrement REEL. C'est le bug du 'PRAGMA key = ?' (qui empechait toute
+    ouverture chiffree) transforme en loi : sans ce test, le mode chiffre
+    n'etait jamais exerce et la regression passait inapercue."""
+
+    def setUp(self):
+        try:
+            import sqlcipher3  # noqa: F401
+        except ImportError:
+            self.skipTest("SQLCipher absent : test du chiffrement reel ignore.")
+        fd, self.chemin = tempfile.mkstemp(suffix=".db", prefix="pupitre-chiffre-")
+        os.close(fd)
+        os.remove(self.chemin)  # chemin neuf, pas un fichier vide
+
+    def tearDown(self):
+        if hasattr(self, "chemin") and os.path.exists(self.chemin):
+            os.remove(self.chemin)
+
+    def test_aller_retour_chiffre(self):
+        c = Coffre(self.chemin, "bonne-cle-2026")  # exiger_chiffrement=True
+        cid = c.nouvelle_conversation("Dossier")
+        c.ajouter_message(cid, "user", "secret du client")
+        c.fermer()
+        c2 = Coffre(self.chemin, "bonne-cle-2026")
+        self.assertEqual("secret du client", c2.messages(cid)[0]["contenu"])
+        c2.fermer()
+
+    def test_mauvaise_passphrase_refusee(self):
+        c = Coffre(self.chemin, "bonne-cle-2026")
+        c.ajouter_message(c.nouvelle_conversation("D"), "user", "secret")
+        c.fermer()
+        with self.assertRaises(CoffreNonChiffreError):
+            Coffre(self.chemin, "mauvaise-cle")  # ne doit PAS s'ouvrir
+
+    def test_fichier_illisible_en_clair(self):
+        c = Coffre(self.chemin, "bonne-cle-2026")
+        c.ajouter_message(c.nouvelle_conversation("D"), "user", "secret")
+        c.fermer()
+        with open(self.chemin, "rb") as f:
+            entete = f.read(16)
+        self.assertFalse(entete.startswith(b"SQLite format 3"))  # pas de SQLite en clair
+
+
 class TestRelais(unittest.TestCase):
     def test_construire_requete_format_openai(self):
         msgs = [
