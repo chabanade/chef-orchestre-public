@@ -6,6 +6,9 @@
 "use strict";
 
 let conversationActive = null;
+// Une conversation neuve n'a pas encore de titre : on la baptisera avec le
+// debut de son premier message (fini les "Nouvelle conversation" en double).
+let conversationSansTitre = false;
 
 const $ = (sel) => document.querySelector(sel);
 const fil = $("#fil");
@@ -24,16 +27,39 @@ async function chargerConversations() {
   liste.innerHTML = "";
   for (const c of convs) {
     const li = document.createElement("li");
-    li.textContent = c.titre;
     li.dataset.id = c.id;
     li.className = (c.id === conversationActive) ? "active" : "";
+
+    const titre = document.createElement("span");
+    titre.className = "titre-conv";
+    titre.textContent = c.titre;
+    titre.title = "Cliquer pour ouvrir, double-clic pour renommer";
+
+    const suppr = document.createElement("button");
+    suppr.className = "suppr-conv";
+    suppr.textContent = "✕"; // ✕
+    suppr.title = "Supprimer cette conversation";
+
+    li.appendChild(titre);
+    li.appendChild(suppr);
+
     li.addEventListener("click", () => ouvrirConversation(c.id));
+    titre.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      renommerConversation(c.id, c.titre);
+    });
+    suppr.addEventListener("click", (e) => {
+      e.stopPropagation();
+      supprimerConversation(c.id);
+    });
+
     liste.appendChild(li);
   }
 }
 
 async function ouvrirConversation(id) {
   conversationActive = id;
+  conversationSansTitre = false; // conversation existante : elle a deja un titre
   const messages = await api(`/api/conversations/${id}/messages`);
   fil.innerHTML = "";
   for (const m of messages) ajouterBulle(m.role, m.contenu);
@@ -48,6 +74,31 @@ async function nouvelleConversation() {
     body: JSON.stringify({ titre: "Nouvelle conversation" }),
   });
   await ouvrirConversation(c.id);
+  conversationSansTitre = true; // sera baptisee au premier message
+}
+
+async function supprimerConversation(id) {
+  if (!confirm("Supprimer definitivement cette conversation et tous ses messages ?")) return;
+  await api("/api/conversations/" + id, { method: "DELETE" });
+  if (id === conversationActive) {
+    conversationActive = null;
+    fil.innerHTML = "";
+  }
+  await chargerConversations();
+}
+
+async function renommerConversation(id, titreActuel) {
+  const saisi = prompt("Renommer la conversation :", titreActuel);
+  if (saisi === null) return; // annule
+  const titre = saisi.trim();
+  if (!titre) return;
+  await api("/api/conversations/" + id, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ titre: titre }),
+  });
+  if (id === conversationActive) conversationSansTitre = false;
+  await chargerConversations();
 }
 
 // --- affichage ----------------------------------------------------------
@@ -131,6 +182,7 @@ async function envoyer(texte) {
 
   if (res.type === "message") {
     ajouterBulle("assistant", res.contenu);
+    await baptiserSiBesoin(texte);
   } else if (res.type === "refus") {
     // On montre la raison exacte du refus du Chef d'Orchestre.
     let detail = "";
@@ -144,6 +196,22 @@ async function envoyer(texte) {
     ajouterAvis(res.message || "Reponse inattendue.");
   }
   await chargerConversations();
+}
+
+// Baptise une conversation neuve avec le debut de son premier message.
+async function baptiserSiBesoin(texte) {
+  if (!conversationSansTitre) return;
+  conversationSansTitre = false;
+  const titre = texte.replace(/\s+/g, " ").trim().slice(0, 40) || "Conversation";
+  try {
+    await api("/api/conversations/" + conversationActive, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ titre: titre }),
+    });
+  } catch (e) {
+    /* le titre automatique n'est pas critique : on n'embete pas l'utilisateur */
+  }
 }
 
 // --- branchements -------------------------------------------------------

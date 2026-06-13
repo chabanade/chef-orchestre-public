@@ -81,6 +81,10 @@ class Envoi(BaseModel):
     rag: bool = False  # True = repondre en s'appuyant sur les documents charges
 
 
+class RenommerConv(BaseModel):
+    titre: str
+
+
 @app.get("/")
 def racine():
     return FileResponse(os.path.join(ICI, "static", "index.html"))
@@ -103,6 +107,14 @@ def creer_conversation(corps: NouvelleConv):
 def lire_messages(conversation_id: int):
     with _verrou:
         return _coffre.messages(conversation_id)
+
+
+@app.patch("/api/conversations/{conversation_id}")
+def renommer_conversation(conversation_id: int, corps: RenommerConv):
+    titre = (corps.titre or "").strip()[:60] or "Sans titre"
+    with _verrou:
+        _coffre.renommer_conversation(conversation_id, titre)
+    return {"id": conversation_id, "titre": titre}
 
 
 @app.delete("/api/conversations/{conversation_id}")

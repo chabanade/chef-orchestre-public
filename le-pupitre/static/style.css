@@ -44,9 +44,17 @@ body {
 }
 #liste-conversations { list-style: none; margin: 0; padding: 8px; overflow-y: auto; flex: 1; }
 #liste-conversations li {
+  display: flex; align-items: center; gap: 6px;
   padding: 10px 12px; border-radius: 8px; cursor: pointer;
-  color: var(--doux); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--doux); font-size: 14px;
 }
+#liste-conversations li .titre-conv { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#liste-conversations li .suppr-conv {
+  background: none; border: 0; color: var(--doux); cursor: pointer;
+  font-size: 13px; padding: 0 2px; opacity: 0; transition: opacity .12s;
+}
+#liste-conversations li:hover .suppr-conv { opacity: .7; }
+#liste-conversations li .suppr-conv:hover { opacity: 1; color: #ff7a7a; }
 #liste-conversations li:hover { background: var(--bord); color: var(--texte); }
 #liste-conversations li.active { background: var(--bord); color: var(--texte); }
 /* Bloc documents (RAG) */
