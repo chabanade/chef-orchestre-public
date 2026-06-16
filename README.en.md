@@ -39,6 +39,103 @@ doubt: local. Two legal reasons, checked against primary sources:
    documentation on support.claude.com, June 2026). For data covered by
    professional secrecy, the unbeatable answer remains: "it never leaves".
 
+## What it can do
+
+Everything below is REALLY in the code (verified module by module, covered by
+159 tests). Nothing is claimed that is not implemented.
+
+### Decide where each request goes (the core)
+
+- **Fail-closed lock**: sensitivity is examined BEFORE cost. Sensitive data:
+  local mandatory. Local down: a clean error, NEVER a silent cloud fallback.
+- **Cost arbitration on the harmless**: a simple harmless request stays local
+  (nearly free); a heavy harmless request goes to the cloud.
+- **Audit log**: every decision is written (who, what, when, why) WITHOUT the
+  request content. That is your GDPR article 32 compliance trail.
+- **Requested route vs applied route**: the system separates what is asked from
+  what it actually decides, and logs it.
+
+### Recognize sensitive data, sending nothing out
+
+- **French identifiers**: IBAN, email, phone, social security number, SIRET, VAT.
+- **Foreign identifiers**: EU VAT, US SSN, Swiss AVS, Italian codice fiscale,
+  international phone numbers.
+- **Contextual identifiers**: national ID, passport, UK NINO, date of birth,
+  bank account (triggered only when a context word is nearby, to avoid false
+  positives).
+- **Professional-secrecy vocabulary**: patient, diagnosis, client file, salary,
+  inheritance, divorce, complaint... matched as whole words (no false positive
+  on a fragment).
+- **Non-readable items** (image, audio, attachment): treated as sensitive by
+  precaution, never sent blindly.
+
+### The fine magnifier, optional, to go further
+
+- **AI detection** of what regexes miss (names, addresses, organizations):
+  GLiNER or Microsoft Presidio, 13 categories of personal data.
+- **Double-checking**: both engines in parallel, union of findings. ONE engine
+  seeing a piece of data is enough to keep it local (recommended: healthcare, law).
+- **Long documents**: split into overlapping windows, nothing is missed.
+- **Strict mode**: if a promised engine is missing, everything stays local.
+- **Engine failure**: the request stays local. A failure degrades power, never
+  confidentiality.
+
+### Knowing how to say "I don't know" (the lookout)
+
+- Detects **uncovered scripts** (Cyrillic, Arabic, Chinese, Greek, Hebrew...).
+- Detects **unidentified Latin languages** (outside the model's 6 languages).
+- Detects **unknown national identifiers**.
+- In these cases, if the target was the cloud, the request is **refused** and
+  the system asks to activate a **country pack** (Brazil, India, China shipped;
+  extensible under your control, never automatically).
+
+### The disagreement arbiter (measuring doubt)
+
+- Compares detectors with one another and measures the level of doubt.
+- On real disagreement, can wake a **more powerful local model** (qwen3:14b):
+  the escalation stays **100% local**, it never goes to the cloud.
+- Tells a real disagreement from a detector's mere inability.
+
+### The locked-cabinet method (use the cloud without handing over data, opt-in)
+
+- **Round-trip pseudonymization**: an IBAN becomes `<IBAN_1>` before the cloud,
+  the real value is restored on return. The correspondence table never leaves
+  the machine.
+- **Session cabinet**: same conversation = same tokens, to iterate without amnesia.
+- **Refusal of incomplete pseudonymization**: if a non-replaceable context
+  remains (the word "patient"), it does not leave.
+- **Robust recovery** of tokens even slightly damaged by the model.
+
+### Le Pupitre (the interface, encrypted by design)
+
+- **Multi-conversation chat**, **encrypted** history (SQLCipher AES-256).
+- **Passphrase** entered at launch, never stored.
+- **Local RAG**: ask questions about your own documents; computation is local,
+  the document text does not leave.
+- **"Show the reasoning"** fold: the answer stays clean, the model's reasoning is
+  available on demand.
+- Simple web interface on `127.0.0.1`, cross-platform (Windows, macOS, Linux).
+
+### The Windows installer (adapts to the machine)
+
+- Detects the hardware and the graphics card memory.
+- Tries the GPU for real, falls back to the processor on failure.
+- **Benchmark**: keeps the largest model that stays fast on THIS machine.
+- Proposes the **graphics driver update** (you accept or refuse).
+- Installs Ollama + Python (isolated environment), creates the icon, opens in
+  app mode.
+
+### Deployment and proofs
+
+- Cross-platform install and startup; **Docker kit** (Ollama + router + Pupitre)
+  with network isolation.
+- Optional **second curtain** (Presidio in series behind the lock).
+- **159 tests** automated; **PII test bench** measuring recall; **act-based demo**
+  including the fail-closed act to run in front of a lawyer.
+
+> To test all this in a few minutes, follow the step-by-step guide:
+> [`GUIDE-TEST.md`](GUIDE-TEST.md) (currently in French).
+
 ## Contents
 
 | File | Role |
@@ -48,12 +145,14 @@ doubt: local. Two legal reasons, checked against primary sources:
 | `detection.py` | The brain of the lock: text extraction, sensitivity, complexity (pure Python, zero dependency) |
 | `detection_fine.py` | The optional magnifier: fine-grained PII detection (GLiNER or Presidio), sliding windows |
 | `chef_orchestre_hook.py` | The LiteLLM plumbing: fail-closed, default-deny, logging |
-| `test_detection.py` | 98 unit tests (stdlib only): `python test_detection.py` |
+| `test_detection.py` | 107 unit tests (stdlib only): `python test_detection.py` |
 | `vigie.py` | The lookout: diagnoses what falls OUTSIDE the known cases (script, language, unknown identifier) and requests an update |
 | `packs-pays/` | Continuous improvement under human GO: per-country detection packs, self-tested on activation |
 | `requirements-fine.txt` | Optional magnifier dependencies (pinned versions) |
 | `demo.py` | The demonstration (see below) |
+| `GUIDE-TEST.md` | The step-by-step install-and-test guide (lawyer scenario, fail-closed proof; in French) |
 | `install/install.sh` / `install.ps1` | Target-machine installation (Linux GPU or Windows) |
+| `installeur/` | The guided Windows installer: detects the hardware, picks the right model via a short benchmark, proposes the GPU driver update, creates the Pupitre icon |
 | `start.sh` / `start.ps1` | Router startup (Ollama + LiteLLM) |
 | `.env.example` | The variables to fill in (keys NEVER go through git) |
 | `rideau-presidio/` | The optional second curtain: LiteLLM's Presidio guardrail, local containers + injected French rules |
@@ -78,6 +177,23 @@ concept is explained in this README; the code itself is short and readable.
    makes the pseudonymized route refuse: incomplete pseudonymization never leaves.
 
 ## Installation
+
+### Guided Windows installer (adapts to the machine)
+
+On Windows, the installer handles everything. It detects the hardware, runs a
+short benchmark to keep the largest model that stays fast on THIS machine,
+proposes a graphics-driver update if the card is held back by a too-old driver
+(you accept or refuse), then creates a "Le Pupitre" desktop icon.
+
+```powershell
+git clone https://github.com/chabanade/chef-orchestre-public
+cd chef-orchestre-public\installeur\windows
+.\lanceur.ps1
+```
+
+The hardware auto-adaptation is detailed in `installeur/README.md`.
+
+### Command line (Linux, macOS, Windows)
 
 ```bash
 git clone https://github.com/chabanade/chef-orchestre-public && cd chef-orchestre-public
@@ -315,6 +431,10 @@ code; every fix is covered by a test:
   perfect. Measure the false-negative rate on YOUR documents before real use.
 - The router guarantees WHERE the data goes, not the quality of the local
   model's answer.
+- Components talk to each other locally over HTTP (on `127.0.0.1`), with no
+  encryption between them: protection relies on machine isolation, not on
+  internal TLS. On a compromised host (local malware), that local traffic would
+  remain readable.
 - Thresholds (length, keywords) are starting settings, to be calibrated.
 - Have every legal statement checked by a lawyer before real professional use:
   this repository is a technical tool, not legal advice.
