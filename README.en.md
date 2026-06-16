@@ -1,4 +1,4 @@
-# Le Chef d'Orchestre (The Conductor) — a fail-closed local/cloud router for AI
+# Le Chef d'Orchestre (The Conductor) : a fail-closed local/cloud router for AI
 
 > 🇫🇷 [Version française](README.md)
 
@@ -212,11 +212,11 @@ Every idea was checked against the ORIGINAL code before being adopted, and the
 detour was worth it. PII-Shield's real code is poorer than its README (NIR
 with no validation and less precise than ours, CNI = a bare `\d{12}`, a
 passport pattern that misses the actual French format): the real loot was its
-IDEA of **contextual patterns** — a pattern too generic to decide alone only
+IDEA of **contextual patterns** : a pattern too generic to decide alone only
 counts when a context word accompanies it. Adopted and improved:
 
 - **French intra-community VAT number** (`FRxx` + SIREN): strong pattern,
-  case-insensitive — it was not detected at all before;
+  case-insensitive : it was not detected at all before;
 - **French ID card** (12 digits + context word) and **French passport** in the
   VERIFIED format (2 digits + 2 letters + 5 digits, source Purview /
   service-public, plus the EU variants): detected by the lock AND tokenized by
@@ -227,7 +227,7 @@ counts when a context word accompanies it. Adopted and improved:
   and a specific-before-generic replacement order;
 - **the second curtain is ready** (`rideau-presidio/`): LiteLLM's native
   Presidio guardrail (`output_parse_pii` = its own round trip) in series
-  behind the lock — two codebases written by different people don't share the
+  behind the lock : two codebases written by different people don't share the
   same blind spots. Two local Docker containers bound to 127.0.0.1, the
   analyzer extended with French, and the router's French rules injected as ad
   hoc recognizers. Ready to plug in (3 steps, see its README), to be tested on
@@ -248,7 +248,7 @@ fixed by format STRUCTURE (not country by country):
   UK NINO; discriminating English keywords (confidential, social security,
   medical record, attorney-client...);
 - **a serious hole exposed by this very question**: the IBAN regex required
-  at least 20 characters — SHORT IBANs (Belgium 16, Netherlands 18, Norway
+  at least 20 characters : SHORT IBANs (Belgium 16, Netherlands 18, Norway
   15) had been slipping through from day one. Fixed and locked by a test;
 - the second curtain enriched accordingly: with `presidio_language: fr`,
   Presidio's native English recognizers (US_SSN...) do not run, so the
@@ -257,7 +257,7 @@ fixed by format STRUCTURE (not country by country):
 
 Honest limit: for names, addresses and context WITHOUT a format (a file
 written in German, a foreign patient's name), regexes can structurally do
-nothing — that is the job of the magnifier (GLiNER is multilingual:
+nothing : that is the job of the magnifier (GLiNER is multilingual:
 en/fr/de/es/it/pt, it detects by MEANING) and of the second curtain. On the
 final machine, the magnifier is not a comfort option: it is the layer that
 covers the foreign cases.
@@ -268,7 +268,7 @@ A protection system that silently BELIEVES it is covered is a danger. The
 lookout (`vigie.py`) diagnoses what falls outside the known cases and
 REQUESTS its own update:
 
-1. **The alert.** Uncovered script (Cyrillic, Arabic, Chinese... — certain
+1. **The alert.** Uncovered script (Cyrillic, Arabic, Chinese... : certain
    detection via Unicode ranges), unidentified Latin language (stop-word
    heuristic, imperfect and documented as such), or unknown identifier (a
    national-identifier-looking sequence that survived the clerk on the
@@ -285,7 +285,7 @@ REQUESTS its own update:
 Shipped packs (formats verified against Microsoft Purview, 12 June 2026):
 Brazil (CPF, CNPJ), India (PAN, Aadhaar), China (18-character resident ID).
 Doctrine: the machine DIAGNOSES and REQUESTS, the human DECIDES and
-ACTIVATES — a security tool never rewrites its own rules by itself, and a
+ACTIVATES : a security tool never rewrites its own rules by itself, and a
 pack can only ADD detections, never remove any (a safe surface by
 construction). Full how-to: `packs-pays/README.md`.
 

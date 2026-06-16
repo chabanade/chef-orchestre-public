@@ -1,4 +1,4 @@
-# Packs pays — l'amelioration continue, sous GO humain
+# Packs pays : l'amelioration continue, sous GO humain
 
 Le routeur sait dire quand un document **sort de ses cases connues** (la
 vigie : ecriture etrangere, langue inconnue, identifiant d'un format jamais
@@ -19,7 +19,7 @@ actives par l'utilisateur, jamais par la machine.
    routeur. C'est SON geste : le systeme ne s'auto-modifie jamais.
 4. **L'auto-test.** Au chargement, chaque motif du pack est verifie :
    la regex doit compiler ET reconnaitre son propre exemple. Un pack
-   casse est REFUSE EN ENTIER et signale (`pack-en-panne:<nom>`) — et
+   casse est REFUSE EN ENTIER et signale (`pack-en-panne:<nom>`) : et
    tant qu'un pack demande est en panne, TOUT reste en local (on a promis
    une couverture qu'on ne peut pas tenir : prudence maximale).
 5. **La reprise.** Le dossier repart : les identifiants du pays sont

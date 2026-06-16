@@ -1,4 +1,4 @@
-# Installeurs — Le Pupitre / Le Chef d'Orchestre
+# Installeurs : Le Pupitre / Le Chef d'Orchestre
 
 > Objectif : un utilisateur **non technique** (un avocat) installe et lance le
 > produit **sans rien y connaître**. Trois niveaux d'ambition, du plus rapide au
@@ -8,20 +8,20 @@
 
 | Niveau | Quoi | État |
 |---|---|---|
-| **1. Lanceur « double-clic »** | Un fichier qui installe les prérequis, prépare tout et démarre. Suppose le dossier du produit copié sur la machine. | ✅ **fait (Windows)** — `windows/` |
+| **1. Lanceur « double-clic »** | Un fichier qui installe les prérequis, prépare tout et démarre. Suppose le dossier du produit copié sur la machine. | ✅ **fait (Windows)** : `windows/` |
 | **2. Vrai installeur natif** | Un `.exe` (Windows) / `.dmg` (Mac) / `.AppImage` (Linux) qui pose tout proprement, crée un raccourci, sans Docker. | ⏳ à venir |
 | **3. Application de bureau** | Emballage Tauri/Electron avec **auto-update signé** intégré (cf. `../maj/POLITIQUE-MISE-A-JOUR.md`). Le produit final vendable. | ⏳ à venir |
 
-## Niveau 1 — Windows (aujourd'hui)
+## Niveau 1 : Windows (aujourd'hui)
 
 Dossier `windows/` :
-- `Demarrer-Le-Pupitre.bat` — le fichier à **double-cliquer**.
-- `lanceur.ps1` — le script qui fait tout (installe Ollama + Python si besoin,
+- `Demarrer-Le-Pupitre.bat` : le fichier à **double-cliquer**.
+- `lanceur.ps1` : le script qui fait tout (installe Ollama + Python si besoin,
   prépare un environnement isolé, choisit le moteur **adapté au matériel par un
   ESSAI RÉEL** (cf. `materiel.ps1`), démarre le routeur + l'interface, crée une
   **icône « Le Pupitre »** sur le Bureau et le menu Démarrer, et ouvre le produit
   en **fenêtre application** (pas un onglet de navigateur).
-- `materiel.ps1` — l'**auto-adaptation matérielle** (exigence #10). Ne *devine*
+- `materiel.ps1` : l'**auto-adaptation matérielle** (exigence #10). Ne *devine*
   pas le matériel : il l'*essaie*. Détecte la carte/VRAM, choisit un modèle qui
   rentre, le teste pour de vrai sur le GPU (réponse cohérente + calcul bien sur
   le GPU), et **bascule proprement sur le processeur** si quoi que ce soit

@@ -1,4 +1,4 @@
-# Le Chef d'Orchestre — routeur local/cloud fail-closed pour l'IA
+# Le Chef d'Orchestre : routeur local/cloud fail-closed pour l'IA
 
 > 🇬🇧 [English version](README.en.md)
 
@@ -37,6 +37,100 @@ local. Deux raisons juridiques, verifiees sur sources primaires :
    officielle support.claude.com, juin 2026). Pour une donnee couverte par le secret
    professionnel, la reponse imbattable reste : "ca ne sort pas".
 
+## Ce que le produit sait faire
+
+Tout ce qui suit est REELLEMENT dans le code (verifie module par module, couvert par
+159 tests). Rien n'est annonce qui ne soit implemente.
+
+### Decider ou va chaque demande (le coeur)
+
+- **Serrure fail-closed** : la sensibilite est examinee AVANT le cout. Donnee sensible :
+  local obligatoire. Local en panne : erreur propre, JAMAIS de bascule cloud silencieuse.
+- **Arbitrage de cout sur l'anodin** : une demande anodine SIMPLE reste en local (quasi
+  gratuit) ; une demande anodine LOURDE part au cloud.
+- **Journal d'audit** : chaque decision est ecrite (qui, quoi, quand, pourquoi) SANS le
+  contenu de la demande. C'est la trace de conformite RGPD article 32.
+- **Route demandee vs route appliquee** : le systeme distingue ce qui est demande de ce
+  qu'il decide reellement, et le trace.
+
+### Reconnaitre les donnees sensibles, sans rien envoyer
+
+- **Identifiants francais** : IBAN, email, telephone, numero de securite sociale, SIRET, TVA.
+- **Identifiants etrangers** : TVA europeenne, numero americain (SSN), suisse (AVS),
+  italien (codice fiscale), telephones internationaux.
+- **Identifiants contextuels** : CNI, passeport, NINO britannique, date de naissance,
+  compte bancaire (declenches seulement si un mot de contexte est present a proximite,
+  pour eviter les faux positifs).
+- **Vocabulaire du secret professionnel** : patient, diagnostic, dossier client, salaire,
+  succession, divorce, plainte... reconnus en mots entiers (pas de faux positif sur un
+  fragment).
+- **Pieces non lisibles** (image, son, fichier joint) : traitees comme sensibles par
+  prudence, jamais envoyees a l'aveugle.
+
+### La loupe fine, optionnelle, pour aller plus loin
+
+- **Detection par IA** de ce que les regex ratent (noms, adresses, organisations) :
+  GLiNER ou Microsoft Presidio, 13 categories de donnees personnelles.
+- **Double verification** : les deux moteurs en parallele, union des trouvailles. Il
+  suffit qu'UN seul voie une donnee pour qu'elle reste en local (recommande sante, avocat).
+- **Longs documents** : decoupes en fenetres qui se chevauchent, rien n'est rate.
+- **Mode strict** : si un moteur promis est manquant, tout reste en local.
+- **Panne d'un moteur** : la demande reste locale. Une panne degrade la puissance,
+  jamais la confidentialite.
+
+### Savoir dire "je ne sais pas" (la vigie)
+
+- Detecte les **ecritures non couvertes** (cyrillique, arabe, chinois, grec, hebreu...).
+- Detecte les **langues latines inconnues** (hors des 6 langues du modele).
+- Detecte les **identifiants nationaux inconnus**.
+- Dans ces cas, si la cible etait le cloud, la demande est **refusee** et le systeme
+  demande l'activation d'un **pack pays** (Bresil, Inde, Chine fournis ; extensibles
+  sous votre controle, jamais en automatique).
+
+### L'arbitre de desaccord (mesurer le doute)
+
+- Compare les detecteurs entre eux et mesure le niveau de doute.
+- Sur desaccord reel, peut reveiller un **modele local plus puissant** (qwen3:14b) :
+  l'escalade reste **100 % locale**, elle ne sort jamais au cloud.
+- Distingue un vrai desaccord d'une simple incapacite d'un detecteur.
+
+### La methode de l'armoire (utiliser le cloud sans livrer les donnees, opt-in)
+
+- **Pseudonymisation aller-retour** : un IBAN devient `<IBAN_1>` avant le cloud, la vraie
+  valeur est restauree au retour. La table de correspondance ne quitte jamais la machine.
+- **Armoire de session** : meme conversation = memes jetons, pour iterer sans amnesie.
+- **Refus de la pseudonymisation incomplete** : si un contexte non remplacable subsiste
+  (le mot "patient"), ca ne part pas.
+- **Recuperation robuste** des jetons meme legerement abimes par le modele.
+
+### Le Pupitre (l'interface, chiffree par conception)
+
+- **Chat multi-conversation**, historique **chiffre** (SQLCipher AES-256).
+- **Passphrase** saisie au lancement, jamais stockee.
+- **RAG local** : poser des questions sur ses propres documents ; les calculs se font en
+  local, le texte des documents ne sort pas.
+- **Repli "voir le raisonnement"** : la reponse reste propre, le raisonnement du modele
+  est consultable a la demande.
+- Interface web simple sur `127.0.0.1`, multiplateforme (Windows, macOS, Linux).
+
+### L'installeur Windows (s'adapte a la machine)
+
+- Detecte le materiel et la memoire de la carte graphique.
+- Essaie le GPU pour de vrai, bascule sur le processeur si echec.
+- **Banc d'essai** : garde le plus gros modele qui reste rapide sur CETTE machine.
+- Propose la **mise a jour du pilote graphique** (vous acceptez ou refusez).
+- Installe Ollama + Python (environnement isole), cree l'icone, ouvre en mode application.
+
+### Deploiement et preuves
+
+- Installation et demarrage multiplateforme ; **kit Docker** (Ollama + routeur + Pupitre)
+  avec cloisonnement reseau.
+- **2e rideau** optionnel (Presidio en serie derriere la serrure).
+- **159 tests** automatises ; **banc d'essai PII** qui mesure le rappel ; **demo en actes**
+  dont l'acte fail-closed a derouler devant un juriste.
+
+> Pour tester tout cela en quelques minutes, suivez le guide pas a pas : [`GUIDE-TEST.md`](GUIDE-TEST.md).
+
 ## Contenu
 
 | Fichier | Role |
@@ -51,6 +145,7 @@ local. Deux raisons juridiques, verifiees sur sources primaires :
 | `packs-pays/` | L'amelioration continue sous GO humain : packs de detection par pays, auto-testes a l'activation |
 | `requirements-fine.txt` | Dependances optionnelles de la loupe (versions epinglees) |
 | `demo.py` | La demonstration en 4 actes (voir ci-dessous) |
+| `GUIDE-TEST.md` | Le guide pas a pas pour installer et tester (scenario juriste, preuve du fail-closed) |
 | `install/install.sh` / `install.ps1` | Installation machine cible (Linux GPU ou Windows) |
 | `installeur/` | L'installeur guide Windows : detecte le materiel, choisit le bon modele par un court banc d'essai, propose la mise a jour du pilote GPU, cree l'icone du Pupitre |
 | `start.sh` / `start.ps1` | Lancement du routeur (Ollama + LiteLLM) |
@@ -222,12 +317,12 @@ Chaque idee a ete verifiee dans le CODE original avant d'etre reprise, et le
 detour valait la peine. Le code reel de PII-Shield est plus pauvre que son
 README (NIR sans validation et moins precis que le notre, CNI = simple
 `\d{12}`, passeport qui ne couvre pas le format francais) : le vrai butin
-etait son IDEE des **motifs contextuels** — un pattern trop generique pour
+etait son IDEE des **motifs contextuels** : un pattern trop generique pour
 decider seul ne compte que si un mot de contexte l'accompagne. Repris et
 ameliores :
 
 - **TVA intracommunautaire FR** (`FRxx` + SIREN) : pattern fort, casse ignoree
-  — elle n'etait pas detectee du tout avant ;
+  : elle n'etait pas detectee du tout avant ;
 - **CNI** (12 chiffres + mot de contexte) et **passeport francais** au format
   VERIFIE (2 chiffres + 2 lettres + 5 chiffres, source Purview/service-public,
   plus les variantes UE) : detectes par la serrure ET jetonnes par le greffier
@@ -238,7 +333,7 @@ ameliores :
   `(?<!\d)` et l'ordre specifique-avant-generique des remplacements ;
 - **le 2e rideau est pret** (`rideau-presidio/`) : le guardrail Presidio natif
   de LiteLLM (`output_parse_pii` = son propre aller-retour) en serie derriere
-  la serrure — deux codes ecrits par des gens differents n'ont pas les memes
+  la serrure : deux codes ecrits par des gens differents n'ont pas les memes
   angles morts. Deux conteneurs Docker locaux fermes sur 127.0.0.1, analyzer
   enrichi du francais, et les regles francaises du routeur injectees en ad hoc
   recognizers. Pret a brancher (3 gestes, voir son README), a tester sur la
@@ -259,7 +354,7 @@ franco-centree ; corrige par STRUCTURE de format (pas pays par pays) :
   britannique ; mots-cles anglais discriminants (confidential, social
   security, medical record, attorney-client...) ;
 - **trou grave trouve par cette question** : la regex IBAN exigeait 20
-  caracteres minimum — les IBAN COURTS (Belgique 16, Pays-Bas 18, Norvege 15)
+  caracteres minimum : les IBAN COURTS (Belgique 16, Pays-Bas 18, Norvege 15)
   passaient au travers depuis le debut. Corrige et verrouille par un test ;
 - 2e rideau enrichi en consequence : en langue `fr`, les recognizers natifs
   anglais de Presidio ne tournent pas, les motifs internationaux sont donc
@@ -267,7 +362,7 @@ franco-centree ; corrige par STRUCTURE de format (pas pays par pays) :
 
 Limite honnete : pour les noms, adresses et contextes SANS format (un dossier
 redige en allemand, un nom de patient etranger), les regex ne peuvent
-structurellement rien — c'est le role de la loupe (GLiNER est multilingue :
+structurellement rien : c'est le role de la loupe (GLiNER est multilingue :
 en/fr/de/es/it/pt, il detecte par le SENS) et du 2e rideau. Sur la machine
 finale, la loupe n'est pas une option de confort : c'est la couche qui couvre
 l'etranger.
@@ -278,7 +373,7 @@ Un systeme de protection qui se CROIT couvert en silence est un danger. La
 vigie (`vigie.py`) diagnostique ce qui sort des cases connues et DEMANDE sa
 mise a jour :
 
-1. **L'alerte.** Ecriture non couverte (cyrillique, arabe, chinois... —
+1. **L'alerte.** Ecriture non couverte (cyrillique, arabe, chinois... :
    detection certaine par plages Unicode), langue latine non identifiee
    (heuristique mots-outils, imparfaite et assumee), ou identifiant inconnu
    (une sequence type identifiant national qui a survecu au greffier sur la
@@ -294,7 +389,7 @@ mise a jour :
 
 Packs livres (formats verifies sur Microsoft Purview, 12/06/2026) : bresil
 (CPF, CNPJ), inde (PAN, Aadhaar), chine (carte d'identite 18 caracteres).
-Doctrine : la machine DIAGNOSTIQUE et DEMANDE, l'humain DECIDE et ACTIVE —
+Doctrine : la machine DIAGNOSTIQUE et DEMANDE, l'humain DECIDE et ACTIVE :
 un outil de securite ne reecrit jamais ses propres regles tout seul, et un
 pack ne peut qu'AJOUTER des detections, jamais en retirer (surface sure par
 construction). Mode d'emploi complet : `packs-pays/README.md`.
@@ -323,6 +418,9 @@ le code ; chaque correctif est couvert par un test :
   reduit ce risque sans le supprimer : aucun detecteur n'est parfait. Mesurez le taux
   de faux negatifs sur VOS documents avant un usage reel.
 - Le routeur garantit OU va la donnee, pas la qualite de la reponse du modele local.
+- Les composants se parlent en local en HTTP (sur `127.0.0.1`), sans chiffrement entre eux :
+  la protection repose sur l'isolement de la machine, pas sur du TLS interne. Sur un poste
+  compromis (logiciel malveillant local), cette communication locale resterait lisible.
 - Les seuils (longueur, mots-cles) sont des reglages de depart, a calibrer sur vos cas.
 - Verifiez chaque affirmation juridique avec un juriste avant un usage professionnel reel :
   ce depot est un outil technique, pas un avis juridique.

@@ -1,4 +1,4 @@
-# Le 2e rideau — Presidio en serie derriere la serrure
+# Le 2e rideau : Presidio en serie derriere la serrure
 
 > **Statut : pret a brancher, pas encore allume.** Ce kit sera teste le
 > jour J sur la machine qui fait tourner le routeur. Rien ici ne touche
@@ -14,7 +14,7 @@ verification deja applique a la loupe (GLiNER + Presidio), etendu a tout
 le routeur.
 
 Bonus decouvert pendant l'etude du 12/06/2026 : LiteLLM sait faire
-l'aller-retour nativement (`output_parse_pii: true`) — il masque a l'aller
+l'aller-retour nativement (`output_parse_pii: true`) : il masque a l'aller
 et restaure les vraies valeurs au retour, comme notre greffier. Une
 deuxieme armoire, independante de la notre.
 

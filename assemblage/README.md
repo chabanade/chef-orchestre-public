@@ -1,4 +1,4 @@
-# Le kit d'assemblage — tout l'orchestre en une commande
+# Le kit d'assemblage : tout l'orchestre en une commande
 
 Ce dossier monte les trois pièces ensemble : **Ollama** (le moteur local),
 **le Chef d'Orchestre** (la serrure/routeur) et **Le Pupitre** (l'interface
@@ -23,7 +23,7 @@ chiffrée). C'est ce qui rend l'ensemble *réellement lançable et démontrable*
 ```
 
 **Cloisonnement réseau** : seul Le Pupitre est exposé, et seulement sur
-`127.0.0.1`. Ollama et le routeur ne sont joignables qu'entre conteneurs —
+`127.0.0.1`. Ollama et le routeur ne sont joignables qu'entre conteneurs :
 aucune porte ouverte vers l'extérieur.
 
 ## Lancer (sur la machine cible)

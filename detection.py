@@ -70,7 +70,7 @@ MOTIFS_REGEX = {
     "telephone_fr": re.compile(r"(?<!\d)(?:\+33\s?|0)[1-9](?:[\s.-]?\d{2}){4}\b"),
     # IGNORECASE : un IBAN tape en minuscules reste un IBAN (trou trouve en revue).
     # {2,7} et non {4,7} : les IBAN COURTS (Belgique 16, Pays-Bas 18, Norvege 15)
-    # passaient au travers — trou trouve par la question "client etranger" du 12/06.
+    # passaient au travers : trou trouve par la question "client etranger" du 12/06.
     "iban": re.compile(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,3})?\b", re.IGNORECASE),
     "numero_securite_sociale": re.compile(r"\b[12]\s?\d{2}\s?(?:0[1-9]|1[0-2]|62|63)\s?(?:\d{2}|2A|2B)\s?\d{3}\s?\d{3}(?:\s?\d{2})?\b"),
     "siret": re.compile(r"\b\d{3}[ ]?\d{3}[ ]?\d{3}[ ]?\d{5}\b"),
@@ -210,7 +210,7 @@ def contexte_present(contextes, texte_minuscule):
 # Un pack (packs-pays/<nom>.json) AJOUTE des motifs, des contextuels et
 # des mots-cles pour un pays : il ne peut jamais RETIRER une detection
 # (surface sure par construction). Activation : CHEF_PACKS_PAYS=bresil,inde
-# dans .env — c'est le geste de l'utilisateur, jamais celui de la machine.
+# dans .env : c'est le geste de l'utilisateur, jamais celui de la machine.
 # Auto-test au chargement : chaque regex doit compiler ET reconnaitre son
 # propre exemple, sinon le pack ENTIER est refuse et signale ; un pack
 # demande mais en panne = promesse de couverture non tenue = TOUT reste

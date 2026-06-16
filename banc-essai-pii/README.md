@@ -1,4 +1,4 @@
-# Banc d'essai PII (FR) — mesure cumulative (15-16/06/2026)
+# Banc d'essai PII (FR) : mesure cumulative (15-16/06/2026)
 
 Premiere brique du « banc d'essai FR maison » : mesurer le **rappel par type
 d'entite** (ce qui FUIT protege le secret, pas la precision). 25 phrases

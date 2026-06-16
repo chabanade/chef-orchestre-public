@@ -4,7 +4,7 @@ La vigie : diagnostiquer ce qui NE RENTRE PAS dans les cases connues.
 
 Demande du 12/06/2026 au soir : quand un document sort de la couverture du
 routeur (ecriture etrangere, langue inconnue, identifiant d'un format jamais
-vu), le systeme doit LE SAVOIR, le dire, et demander sa mise a jour — au
+vu), le systeme doit LE SAVOIR, le dire, et demander sa mise a jour : au
 lieu de se croire couvert en silence. C'est le maillon "amelioration
 continue" : la vigie remplit un carnet local (alertes-couverture.jsonl,
 metadonnees SEULEMENT), l'utilisateur renseigne l'origine du document,
