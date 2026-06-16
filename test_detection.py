@@ -12,6 +12,7 @@ import unittest
 import detection_fine
 from detection import (
     _env_int,
+    detecter_avec_detail,
     detecter_complexite,
     detecter_sensibilite,
     detecter_sensibilite_complete,
@@ -78,6 +79,16 @@ class TestPillage(unittest.TestCase):
         self.assertIn("iban", codes)
         self.assertNotIn("tva_fr", codes)
 
+    def test_tva_ue_detectee(self):
+        # Vraie TVA intracommunautaire (quasi numerique) : toujours vue.
+        self.assertIn("tva_ue", detecter_sensibilite("Fournisseur belge, TVA BE0123456789."))
+
+    def test_mot_francais_pas_pris_pour_tva_ue(self):
+        # Faux positif trouve au banc a 3 detecteurs (15/06/2026) : un mot
+        # commencant par un code pays (BEnhassine, BEneficiaire) n'est PAS une TVA.
+        codes = detecter_sensibilite("Le beneficiaire Karim Benhassine signe le bail.")
+        self.assertNotIn("tva_ue", codes)
+
     def test_cni_avec_contexte_detectee(self):
         codes = detecter_sensibilite("Renouvellement de la carte d'identité n° 123456789012.")
         self.assertIn("cni_fr", codes)
@@ -102,8 +113,50 @@ class TestPillage(unittest.TestCase):
         self.assertNotIn("mot-cle:cni", detecter_sensibilite("on organise un picnic"))
 
 
+class TestComblerTrous(unittest.TestCase):
+    """Trous combles apres le banc a 3 detecteurs (15/06) : date de naissance et
+    numero de compte, en motifs CONTEXTUELS (sensibles pres d'un mot dedie, pas
+    dans le vide, pour ne pas masquer toutes les dates). Donnees FICTIVES."""
+
+    def test_date_naissance_numerique_avec_contexte(self):
+        self.assertIn("date_naissance", detecter_sensibilite("Ne le 12/03/1980 a Marseille."))
+
+    def test_date_naissance_en_lettres_avec_contexte(self):
+        self.assertIn("date_naissance", detecter_sensibilite("Patiente nee le 5 janvier 1991."))
+
+    def test_date_generique_sans_contexte_ignoree(self):
+        # Une date de reunion n'est PAS une donnee de naissance.
+        self.assertNotIn("date_naissance", detecter_sensibilite("Reunion le 12/03/2026 a 14h."))
+
+    def test_compte_avec_contexte(self):
+        self.assertIn("compte_bancaire", detecter_sensibilite("Compte 00012345678 a la BNP."))
+
+    def test_numero_long_sans_contexte_ignore(self):
+        # 11 chiffres sans mot bancaire = peut-etre une reference colis : pas compte.
+        self.assertNotIn("compte_bancaire", detecter_sensibilite("Reference 00012345678 du colis."))
+
+
+class TestAvecDetail(unittest.TestCase):
+    """detecter_avec_detail : une seule passe -> MEME union que
+    detecter_sensibilite_complete (le routage ne change pas) + detail par
+    detecteur pour l'arbitre de desaccord."""
+
+    def test_meme_union_que_complete(self):
+        for texte in ("Explique la difference entre un volt et un ampere.",
+                      "Le patient est joignable au 06 12 34 56 78.",
+                      "Ne le 12/03/1980, compte 00012345678 a la BNP."):
+            codes, _ = detecter_avec_detail(texte)
+            self.assertEqual(set(detecter_sensibilite_complete(texte)), set(codes), texte)
+
+    def test_detail_contient_la_regex(self):
+        _, par = detecter_avec_detail("Appeler le 06 12 34 56 78.")
+        self.assertIn("regex", par)
+        self.assertIn("telephone_fr", par["regex"])
+
+
 class TestClientEtranger(unittest.TestCase):
-    """Le professionnel francais a des clients/patients ETRANGERS (question utilisateur du 12/06 au soir) : les identifiants etrangers distinctifs doivent etre
+    """Le professionnel francais a des clients/patients ETRANGERS (question
+    posee le 12/06 soir) : les identifiants etrangers distinctifs doivent etre
     vus par la serrure. Donnees FICTIVES."""
 
     def test_ssn_americain_detecte(self):

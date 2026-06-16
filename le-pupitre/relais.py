@@ -13,8 +13,13 @@ la construction de la requete est testable sans serveur.
 """
 
 import json
+import re
 import urllib.error
 import urllib.request
+
+# Bloc de raisonnement quand un modele l'inscrit DANS le texte (vieille forme).
+# La forme moderne (litellm/ollama) le met dans un champ "reasoning_content".
+_THINK = re.compile(r"<think>(.*?)</think>", re.DOTALL | re.IGNORECASE)
 
 
 def construire_requete(messages, modele, stream=False):
@@ -38,14 +43,42 @@ def construire_requete(messages, modele, stream=False):
 
 
 def extraire_reponse(reponse_json):
-    """Tire le texte de l'assistant d'une reponse OpenAI standard.
+    """Tire la REPONSE PROPRE de l'assistant (sans le raisonnement).
 
     Tolerant : si la forme est inattendue, retourne une chaine vide plutot que
     de crasher (le serveur saura afficher 'reponse vide' sans tomber)."""
     try:
-        return reponse_json["choices"][0]["message"]["content"] or ""
+        contenu = reponse_json["choices"][0]["message"]["content"] or ""
     except (KeyError, IndexError, TypeError):
         return ""
+    # Filet : si un modele a inscrit son raisonnement EN LIGNE (<think>...),
+    # on le retire de la reponse affichee (le raisonnement va dans le repli).
+    contenu = _THINK.sub("", contenu)
+    coupe = contenu.lower().find("<think>")   # <think> ouvert mais jamais ferme
+    if coupe != -1:
+        contenu = contenu[:coupe]
+    return contenu.strip()
+
+
+def extraire_raisonnement(reponse_json):
+    """Tire le RAISONNEMENT du modele, s'il y en a un, sinon une chaine vide.
+
+    Deux formes possibles :
+      - moderne : champ 'reasoning_content' (litellm/ollama, ex. qwen3) ;
+      - ancienne : bloc <think>...</think> inscrit dans le contenu.
+    Le Pupitre l'affiche dans un repli 'voir le raisonnement' : la reponse
+    reste propre, mais le raisonnement reste consultable (choix de conception)."""
+    try:
+        message = reponse_json["choices"][0]["message"]
+    except (KeyError, IndexError, TypeError):
+        return ""
+    if not isinstance(message, dict):
+        return ""
+    direct = message.get("reasoning_content") or message.get("reasoning") or ""
+    if direct:
+        return direct.strip()
+    blocs = _THINK.findall(message.get("content") or "")
+    return "\n".join(b.strip() for b in blocs).strip()
 
 
 class RelaisErreur(RuntimeError):
@@ -58,13 +91,14 @@ class RelaisErreur(RuntimeError):
 
 
 def envoyer(requete, base_url, cle, timeout=120):
-    """Envoie la requete au routeur et retourne le texte de l'assistant.
+    """Envoie la requete au routeur et retourne {contenu, raisonnement}.
 
     base_url : l'adresse du Chef d'Orchestre (ex. http://localhost:4000).
     cle      : la master key du routeur (jamais une cle de fournisseur cloud).
     Un refus du routeur (403 fail-closed, 'document hors cases connues'...) est
     remonte tel quel dans RelaisErreur.detail : le Pupitre AFFICHE la raison du
     refus, il ne la masque pas.
+    Retour : dict {"contenu": <reponse propre>, "raisonnement": <ou ''>}.
     """
     url = base_url.rstrip("/") + "/v1/chat/completions"
     corps = json.dumps(requete).encode("utf-8")
@@ -75,7 +109,7 @@ def envoyer(requete, base_url, cle, timeout=120):
     try:
         with urllib.request.urlopen(demande, timeout=timeout) as rep:
             charge = json.loads(rep.read().decode("utf-8"))
-        return extraire_reponse(charge)
+        return {"contenu": extraire_reponse(charge), "raisonnement": extraire_raisonnement(charge)}
     except urllib.error.HTTPError as exc:
         detail = _lire_detail(exc)
         raise RelaisErreur(

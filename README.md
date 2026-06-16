@@ -46,12 +46,13 @@ local. Deux raisons juridiques, verifiees sur sources primaires :
 | `detection.py` | Le cerveau de la serrure : extraction du texte, sensibilite, complexite (Python pur, zero dependance) |
 | `detection_fine.py` | La loupe optionnelle : detection fine PII (GLiNER ou Presidio), fenetres glissantes |
 | `chef_orchestre_hook.py` | La plomberie LiteLLM : fail-closed, default-deny, journal |
-| `test_detection.py` | 98 tests unitaires (stdlib uniquement) : `python test_detection.py` |
+| `test_detection.py` | 107 tests unitaires (stdlib uniquement) : `python test_detection.py` |
 | `vigie.py` | La vigie : diagnostique ce qui SORT des cases connues (ecriture, langue, identifiant inconnu) et demande la mise a jour |
 | `packs-pays/` | L'amelioration continue sous GO humain : packs de detection par pays, auto-testes a l'activation |
 | `requirements-fine.txt` | Dependances optionnelles de la loupe (versions epinglees) |
 | `demo.py` | La demonstration en 4 actes (voir ci-dessous) |
 | `install/install.sh` / `install.ps1` | Installation machine cible (Linux GPU ou Windows) |
+| `installeur/` | L'installeur guide Windows : detecte le materiel, choisit le bon modele par un court banc d'essai, propose la mise a jour du pilote GPU, cree l'icone du Pupitre |
 | `start.sh` / `start.ps1` | Lancement du routeur (Ollama + LiteLLM) |
 | `.env.example` | Les variables a remplir (les cles ne passent JAMAIS par git) |
 | `rideau-presidio/` | Le 2e rideau optionnel : guardrail Presidio de LiteLLM, conteneurs locaux + regles francaises injectees |
@@ -71,6 +72,24 @@ local. Deux raisons juridiques, verifiees sur sources primaires :
    fait refuser la route pseudonymisee : une anonymisation incomplete ne sort pas.
 
 ## Installation
+
+### Installation guidee Windows (s'adapte a la machine)
+
+Sur une machine Windows, l'installeur s'occupe de tout. Il detecte le materiel,
+lance un court banc d'essai pour garder le modele le plus gros qui reste rapide
+sur CETTE machine, propose la mise a jour du pilote graphique si la carte est
+bridee par un pilote trop ancien (vous acceptez ou refusez), puis cree une
+icone "Le Pupitre" sur le Bureau.
+
+```powershell
+git clone https://github.com/chabanade/chef-orchestre-public
+cd chef-orchestre-public\installeur\windows
+.\lanceur.ps1
+```
+
+Le detail de l'auto-adaptation au materiel est decrit dans `installeur/README.md`.
+
+### En ligne de commande (Linux, macOS, Windows)
 
 ```bash
 git clone https://github.com/chabanade/chef-orchestre-public && cd chef-orchestre-public

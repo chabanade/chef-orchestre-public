@@ -8,6 +8,13 @@ journal-routage.jsonl
 __pycache__/
 *.pyc
 .venv/
+.venv-routeur/
+
+# Config generee par l'installeur, adaptee au materiel de CHAQUE machine
+# (vit a cote du hook pour litellm). Jamais dans git.
+config.active.yaml
+config.smoke.yaml
+config.local-test.yaml
 
 # Sauvegardes auto locales (jamais dans git)
 sauvegardes-contexte/

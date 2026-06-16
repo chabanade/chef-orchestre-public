@@ -30,7 +30,13 @@ from fastapi import HTTPException
 from litellm.integrations.custom_logger import CustomLogger
 
 import vigie
+try:
+    import arbitre_desaccord
+except ImportError:            # arbitre absent (deploiement partiel ou ancien) :
+    arbitre_desaccord = None   # le routage marche sans lui (juste pas d'observabilite
+                               # ni d'escalade). Degradation sure, jamais un crash.
 from detection import (
+    detecter_avec_detail,
     detecter_complexite,
     detecter_sensibilite_complete,
     est_couverture,
@@ -52,6 +58,10 @@ ROUTE_AUTO = os.environ.get("CHEF_ROUTE_AUTO", "chef-auto")
 # Route "methode de l'armoire" (opt-in) : pseudonymiser puis cloud,
 # re-personnalisation au retour. Voir greffier.py.
 ROUTE_PSEUDO = os.environ.get("CHEF_ROUTE_PSEUDO", "cloud-pseudo")
+# Route LOCALE FORTE : l'arbitre l'utilise sur fort doute (desaccord reel) pour
+# reveiller un modele local plus puissant. VIDE -> on retombe sur ROUTE_LOCALE :
+# aucune escalade, aucun changement de comportement (defaut sur). Reste local.
+ROUTE_LOCALE_FORTE = os.environ.get("CHEF_ROUTE_LOCALE_FORTE", "").strip() or ROUTE_LOCALE
 
 # L'armoire en transit : table de chaque demande pseudo en cours, par id
 # d'appel. En memoire seulement, purgee au retour. Jamais journalisee.
@@ -61,7 +71,9 @@ _armoires_en_transit = {}
 # dans config.yaml. C'est un engagement de configuration, verifie a la main.
 ROUTES_LOCALES = {
     nom.strip()
-    for nom in os.environ.get("CHEF_ROUTES_LOCALES", ROUTE_LOCALE + "," + ROUTE_AUTO).split(",")
+    for nom in os.environ.get(
+        "CHEF_ROUTES_LOCALES",
+        ",".join([ROUTE_LOCALE, ROUTE_LOCALE_FORTE, ROUTE_AUTO])).split(",")
     if nom.strip()
 }
 
@@ -109,13 +121,33 @@ class ChefOrchestre(CustomLogger):
             texte, non_inspectable = extraire_texte(data)
             # La loupe (GLiNER) peut prendre du temps CPU : on la sort de la boucle
             # asynchrone pour ne pas geler le standardiste pendant qu'elle travaille.
+            # Une seule passe -> codes pour le routage ET detail par detecteur.
             boucle = asyncio.get_running_loop()
-            motifs_sensibles = await boucle.run_in_executor(None, detecter_sensibilite_complete, texte)
+            motifs_sensibles, par_detecteurs = await boucle.run_in_executor(
+                None, detecter_avec_detail, texte)
             if non_inspectable:
                 motifs_sensibles = motifs_sensibles + ["contenu-non-inspectable"]
         except Exception:
             texte = ""
             motifs_sensibles = ["detection-en-panne"]
+            par_detecteurs = {"regex": ["detection-en-panne"]}
+
+        # Arbitre de desaccord : OBSERVABILITE seulement. Il ne change PAS le
+        # routage (la sensibilite/fail-closed reste seule maitresse du local/cloud) ;
+        # il journalise le niveau de DOUTE (desaccord reel entre detecteurs) pour
+        # preparer l'escalade vers un modele plus puissant. Machine diagnostique,
+        # humain decide. Non bloquant ; desactivable par CHEF_ARBITRE=0.
+        decision_arbitre = None
+        if arbitre_desaccord is not None and os.environ.get("CHEF_ARBITRE", "1") != "0":
+            try:
+                decision_arbitre = arbitre_desaccord.arbitrer(par_detecteurs)
+                if decision_arbitre.niveau_doute in ("moyen", "eleve"):
+                    journaliser("arbitre-doute", modele_demande, None,
+                                ["doute:" + decision_arbitre.niveau_doute,
+                                 "action:" + decision_arbitre.action]
+                                + ["desaccord:" + c for c in decision_arbitre.desaccord], len(texte))
+            except Exception:
+                decision_arbitre = None
 
         # ---- Route PSEUDO (opt-in) : la methode de l'armoire ----
         if modele_demande == ROUTE_PSEUDO:
@@ -200,9 +232,15 @@ class ChefOrchestre(CustomLogger):
                 raise _refus(motifs_sensibles,
                              "Demande refusee : donnee sensible detectee, le cloud est "
                              "interdit pour cette classe de donnees (fail-closed).")
-            # Cible locale (ou route auto) : on force le local, en le journalisant.
-            data["model"] = ROUTE_LOCALE
-            journaliser("force-local-sensible", modele_demande, ROUTE_LOCALE, motifs_sensibles, len(texte))
+            # Cible locale (ou route auto) : on force le local. Si l'arbitre
+            # signale une escalade (desaccord reel) ET qu'un palier fort distinct
+            # est configure, on reveille le modele local plus puissant. Reste
+            # local : le fail-closed n'est jamais affaibli.
+            route = (arbitre_desaccord.route_escaladee(decision_arbitre, ROUTE_LOCALE, ROUTE_LOCALE_FORTE)
+                     if arbitre_desaccord is not None else ROUTE_LOCALE)
+            data["model"] = route
+            etiquette = "escalade-local-fort" if route != ROUTE_LOCALE else "force-local-sensible"
+            journaliser(etiquette, modele_demande, route, motifs_sensibles, len(texte))
             return data
 
         # ---- Pilier 2 et 3 : COMPLEXITE puis ECONOMIE (route auto seulement) ----

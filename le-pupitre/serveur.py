@@ -35,6 +35,7 @@ except ImportError:
 
 import rag
 import relais
+import version as version_produit
 from coffre import Coffre
 
 # ------------------------------------------------------------------
@@ -88,6 +89,12 @@ class RenommerConv(BaseModel):
 @app.get("/")
 def racine():
     return FileResponse(os.path.join(ICI, "static", "index.html"))
+
+
+@app.get("/api/version")
+def info_version():
+    """Version du produit + mode de MAJ. Aucune donnee sensible (cf. version.py)."""
+    return version_produit.infos_version()
 
 
 @app.get("/api/conversations")
@@ -166,15 +173,20 @@ def envoyer(corps: Envoi):
             content={"type": "refus", "message": str(exc), "detail": exc.detail},
         )
 
-    if not reponse:
+    contenu = reponse.get("contenu", "")
+    raisonnement = reponse.get("raisonnement", "")
+    if not contenu:
         return JSONResponse(
             status_code=200,
             content={"type": "vide", "message": "Le modele a renvoye une reponse vide."},
         )
 
+    # On n'enregistre que la REPONSE PROPRE dans le coffre : le raisonnement est
+    # ephemere (affiche dans un repli), et le renvoyer au modele au tour suivant
+    # le perturberait. L'historique reste donc propre.
     with _verrou:
-        _coffre.ajouter_message(corps.conversation_id, "assistant", reponse)
-    return {"type": "message", "role": "assistant", "contenu": reponse}
+        _coffre.ajouter_message(corps.conversation_id, "assistant", contenu)
+    return {"type": "message", "role": "assistant", "contenu": contenu, "raisonnement": raisonnement}
 
 
 # ------------------------------------------------------------------

@@ -102,10 +102,26 @@ async function renommerConversation(id, titreActuel) {
 }
 
 // --- affichage ----------------------------------------------------------
-function ajouterBulle(role, texte) {
+function ajouterBulle(role, texte, raisonnement) {
   const div = document.createElement("div");
   div.className = "bulle " + role;
   div.textContent = texte;
+  // Repli "voir le raisonnement" : la reponse reste propre, mais on peut
+  // deplier le raisonnement du modele si on veut le verifier (choix de conception).
+  // textContent partout -> aucun risque d'injection (le modele ne peut pas
+  // injecter de HTML).
+  if (raisonnement) {
+    const det = document.createElement("details");
+    det.className = "raisonnement";
+    const sum = document.createElement("summary");
+    sum.textContent = "voir le raisonnement";
+    det.appendChild(sum);
+    const corps = document.createElement("div");
+    corps.className = "raisonnement-corps";
+    corps.textContent = raisonnement;
+    det.appendChild(corps);
+    div.appendChild(det);
+  }
   fil.appendChild(div);
   fil.scrollTop = fil.scrollHeight;
   return div;
@@ -181,7 +197,7 @@ async function envoyer(texte) {
   attente.remove();
 
   if (res.type === "message") {
-    ajouterBulle("assistant", res.contenu);
+    ajouterBulle("assistant", res.contenu, res.raisonnement);
     await baptiserSiBesoin(texte);
   } else if (res.type === "refus") {
     // On montre la raison exacte du refus du Chef d'Orchestre.
@@ -246,6 +262,16 @@ $("#fichier-doc").addEventListener("change", (e) => {
   e.target.value = ""; // permet de re-deposer le meme fichier
 });
 
+// Version du produit affichee discretement (ne transmet aucune donnee).
+async function afficherVersion() {
+  try {
+    const i = await api("/api/version");
+    const el = $("#version-produit");
+    if (el) el.textContent = "Le Pupitre v" + i.version;
+  } catch (e) { /* sans gravite */ }
+}
+
 // --- demarrage ----------------------------------------------------------
 chargerConversations();
 chargerDocuments();
+afficherVersion();

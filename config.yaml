@@ -31,6 +31,17 @@ model_list:
       model: ollama_chat/qwen3:4b
       api_base: os.environ/OLLAMA_API_BASE
 
+  # Route LOCALE FORTE : un modele local PLUS PUISSANT (ex. qwen3:14b), que
+  # l'arbitre reveille UNIQUEMENT pour les cas a fort doute (desaccord reel
+  # entre detecteurs). Le tout-venant reste sur le petit modele : on limite
+  # ainsi la puissance machine. Reste 100% LOCAL (l'escalade ne sort jamais
+  # au cloud). Activee seulement si CHEF_ROUTE_LOCALE_FORTE=local-fort dans .env
+  # ET que le modele OLLAMA_MODEL_FORT est disponible sur la machine.
+  - model_name: local-fort
+    litellm_params:
+      model: ollama_chat/qwen3:14b
+      api_base: os.environ/OLLAMA_API_BASE
+
   # Route virtuelle "methode de l'armoire" (opt-in) : le hook pseudonymise
   # (IBAN, NIR, email... -> jetons) PUIS bascule vers le cloud ; la table de
   # correspondance reste en memoire locale et la reponse est re-personnalisee

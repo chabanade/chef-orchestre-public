@@ -93,9 +93,15 @@ MOTIFS_REGEX = {
     # TVA des autres pays de l'UE (prefixe pays + 8 a 12 alphanum colles).
     # Un IBAN compact ne matche pas : il a toujours des chiffres derriere
     # qui font echouer le \b (meme logique que tva_fr).
+    # Le lookahead (?=...\d...\d) exige AU MOINS 2 chiffres dans le corps : un
+    # vrai numero de TVA est quasi numerique. Sans ce garde, un MOT francais
+    # commencant par un code pays (BEnhassine, BEneficiaire) etait pris pour une
+    # TVA belge (faux positif trouve au banc a 3 detecteurs, 15/06/2026). Le
+    # garde ne retire AUCUNE vraie TVA (toutes ont >=2 chiffres) : sur-detecter
+    # un mot coutait un passage en local inutile et sur-escaladait l'arbitre.
     "tva_ue": re.compile(
         r"\b(?:AT|BE|BG|CY|CZ|DE|DK|EE|EL|ES|FI|HR|HU|IE|IT|LT|LU|LV|MT|NL|PL|PT|RO|SE|SI|SK|XI)"
-        r"[A-Z0-9]{8,12}\b", re.IGNORECASE),
+        r"(?=[A-Z0-9]*\d[A-Z0-9]*\d)[A-Z0-9]{8,12}\b", re.IGNORECASE),
     # SSN americain : le format a tirets 3-2-4 est distinctif.
     "ssn_us": re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),
     # AVS/AHV suisse : 13 chiffres commencant par 756 (le code pays ISO).
@@ -136,6 +142,24 @@ MOTIFS_CONTEXTUELS = {
     "nino_uk": (
         re.compile(r"\b[A-Za-z]{2}\s?(?:\d{2}\s?){3}[A-Da-d]\b"),
         ["national insurance", "nino"],
+    ),
+    # Date de NAISSANCE : une date n'est sensible que dans un contexte de
+    # naissance, sinon on masquerait toutes les dates de reunion. Numerique
+    # (12/03/1980) ou en lettres (5 janvier 1991). Trou trouve au banc 15/06.
+    "date_naissance": (
+        re.compile(
+            r"\b(?:\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}|"
+            r"\d{1,2}\s+(?:janvier|fevrier|février|mars|avril|mai|juin|juillet|"
+            r"aout|août|septembre|octobre|novembre|decembre|décembre)\s+\d{4})\b",
+            re.IGNORECASE),
+        ["naissance", "ne le", "nee le", "né le", "née le", "date de naissance"],
+    ),
+    # Numero de COMPTE bancaire non-IBAN (l'IBAN est deja couvert) : une suite
+    # de 10 a 14 chiffres ne compte que pres d'un mot de contexte bancaire.
+    # Trou trouve au banc 15/06 (numero de compte nu non detecte).
+    "compte_bancaire": (
+        re.compile(r"\b\d{10,14}\b"),
+        ["compte", "numero de compte", "numéro de compte", "account number", "n de compte"],
     ),
 }
 
@@ -357,6 +381,45 @@ def detecter_sensibilite_complete(texte):
         codes += codes_vigie
     codes += PACKS_STATUT
     return codes
+
+
+def detecter_avec_detail(texte):
+    """Une SEULE passe de detection qui retourne (codes_union, par_detecteur).
+
+    codes_union = exactement la meme union que detecter_sensibilite_complete
+    (regex + loupe + vigie + packs) : le routage ne change pas (equivalence
+    verrouillee par test_avec_detail_meme_union). par_detecteur = {detecteur:
+    [codes]} pour que l'arbitre de desaccord sache QUI a vu QUOI, sans relancer
+    la detection (pas de surcout).
+    """
+    global _statut_loupe_journalise, _statut_packs_journalise
+    regex_codes = detecter_sensibilite(texte)
+    par = {"regex": regex_codes}
+    codes = list(regex_codes)
+    try:
+        from detection_fine import detecter_par_moteur, statut
+        if not _statut_loupe_journalise:
+            _statut_loupe_journalise = True
+            journaliser("loupe-statut", None, None, [statut()], 0)
+        for nom, liste in detecter_par_moteur(texte).items():
+            par[nom] = liste
+            codes += liste
+    except ImportError:
+        pass
+    except Exception:
+        codes += ["loupe-en-panne"]
+        par["loupe"] = ["loupe-en-panne"]
+    if PACKS_DEMANDES and not _statut_packs_journalise:
+        _statut_packs_journalise = True
+        journaliser("packs-statut", None, None,
+                    ["actifs:" + ",".join(PACKS_CHARGES or ["aucun"])] + PACKS_STATUT, 0)
+    codes_vigie = vigie.detecter_couverture(texte)
+    if codes_vigie:
+        vigie.signaler(codes_vigie, len(texte))
+        codes += codes_vigie
+        par["vigie"] = list(codes_vigie)
+    codes += PACKS_STATUT
+    return codes, par
 
 
 def detecter_complexite(texte):

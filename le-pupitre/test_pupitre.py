@@ -111,8 +111,8 @@ class TestFailClosed(unittest.TestCase):
 class TestChiffrementReel(unittest.TestCase):
     """Quand SQLCipher EST present (machine de deploiement / venv), on prouve le
     chiffrement REEL. C'est le bug du 'PRAGMA key = ?' (qui empechait toute
-    ouverture chiffree) transforme en loi : sans ce test, le mode chiffre
-    n'etait jamais exerce et la regression passait inapercue."""
+    ouverture chiffree, corrige le 13/06/2026) transforme en loi : sans ce test,
+    le mode chiffre n'etait jamais exerce et la regression passait inapercue."""
 
     def setUp(self):
         try:
@@ -152,6 +152,38 @@ class TestChiffrementReel(unittest.TestCase):
         self.assertFalse(entete.startswith(b"SQLite format 3"))  # pas de SQLite en clair
 
 
+class TestVersion(unittest.TestCase):
+    """Ossature evolutive : version du produit + mode de MAJ (sans appel reseau)."""
+
+    def test_version_non_vide(self):
+        import version
+        infos = version.infos_version()
+        self.assertTrue(infos["version"])
+        self.assertIn(infos["mode_maj"], version.MODES_MAJ)
+        self.assertIn("canal_configure", infos)
+
+    def test_mode_maj_par_defaut_prudent(self):
+        import version
+        ancien = os.environ.pop("CHEF_MAJ_MODE", None)
+        try:
+            self.assertEqual("manuel", version.mode_maj())  # defaut prudent
+        finally:
+            if ancien is not None:
+                os.environ["CHEF_MAJ_MODE"] = ancien
+
+    def test_mode_maj_invalide_retombe_sur_manuel(self):
+        import version
+        ancien = os.environ.get("CHEF_MAJ_MODE")
+        os.environ["CHEF_MAJ_MODE"] = "n_importe_quoi"
+        try:
+            self.assertEqual("manuel", version.mode_maj())
+        finally:
+            if ancien is None:
+                os.environ.pop("CHEF_MAJ_MODE", None)
+            else:
+                os.environ["CHEF_MAJ_MODE"] = ancien
+
+
 class TestRelais(unittest.TestCase):
     def test_construire_requete_format_openai(self):
         msgs = [
@@ -176,6 +208,24 @@ class TestRelais(unittest.TestCase):
     def test_extraire_reponse_forme_inattendue_ne_crashe_pas(self):
         self.assertEqual("", relais.extraire_reponse({"oups": 1}))
         self.assertEqual("", relais.extraire_reponse(None))
+
+    def test_raisonnement_champ_dedie(self):
+        # Forme moderne : litellm/ollama mettent le raisonnement a part.
+        rep = {"choices": [{"message": {
+            "role": "assistant", "content": "4", "reasoning_content": "2+2 donne 4."}}]}
+        self.assertEqual("4", relais.extraire_reponse(rep))
+        self.assertEqual("2+2 donne 4.", relais.extraire_raisonnement(rep))
+
+    def test_raisonnement_inline_think_est_retire_de_la_reponse(self):
+        # Forme ancienne : raisonnement inscrit en <think>...</think> dans le texte.
+        rep = {"choices": [{"message": {
+            "role": "assistant", "content": "<think>je calcule</think>La reponse est 4."}}]}
+        self.assertEqual("La reponse est 4.", relais.extraire_reponse(rep))
+        self.assertEqual("je calcule", relais.extraire_raisonnement(rep))
+
+    def test_aucun_raisonnement(self):
+        rep = {"choices": [{"message": {"role": "assistant", "content": "Bonjour."}}]}
+        self.assertEqual("", relais.extraire_raisonnement(rep))
 
 
 class FauxEmbedder:

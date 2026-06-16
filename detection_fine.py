@@ -184,3 +184,24 @@ def detecter_sensibilite_fine(texte):
         except Exception:  # panne en cours de route : les regles v1 restent le filet
             codes.add("loupe-en-panne")
     return sorted(codes)
+
+
+def detecter_par_moteur(texte):
+    """Comme detecter_sensibilite_fine, mais SANS aplatir : retourne le detail
+    {nom_moteur: [codes]} pour que l'arbitre de desaccord sache QUI a vu QUOI.
+
+    Ajout non destructif (n'altere pas le comportement existant). Ne leve jamais,
+    ne retourne jamais None. Un moteur en panne -> {nom: ["loupe-en-panne"]}.
+    Mode strict avec un moteur manquant -> entree "_strict": ["loupe-en-panne"].
+    """
+    _initialiser()
+    detail = {}
+    if STRICTE and _indisponibles and DEMANDES != ["off"]:
+        detail["_strict"] = ["loupe-en-panne"]
+    for nom, analyser in _moteurs:
+        try:
+            with _verrou_inference:
+                detail[nom] = analyser(texte)
+        except Exception:
+            detail[nom] = ["loupe-en-panne"]
+    return detail
